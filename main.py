@@ -55,7 +55,7 @@ BANNER_FONT = ""
 BANNER_SIZE = None
 BANNER_WIDTH = None
 BANNER_COLOR = None
-BANNER_BACKGROUND = None
+BANNER_BACKGROUND = "black"
 BANNER_PADDING = None
 BANNER_GAP = None
 
@@ -592,4 +592,5 @@ def run():
         time.sleep(SCROLL_DELAY)
 
 
-run()
+if __name__ == "__main__":
+    run()
