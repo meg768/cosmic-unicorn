@@ -10,7 +10,6 @@ except ImportError:
 
 from cosmic import CosmicUnicorn
 from picographics import PicoGraphics, DISPLAY_COSMIC_UNICORN as DISPLAY
-from pngdec import PNG
 from wifi import connect_wifi
 
 try:
@@ -58,10 +57,11 @@ BANNER_COLOR = None
 BANNER_BACKGROUND = "black"
 BANNER_PADDING = None
 BANNER_GAP = None
+BANNER_FORMAT = "bmp24"
 
 # Local files used for safe image updates.
-IMAGE = "display.png"
-TEMP_IMAGE = "display.new.png"
+IMAGE = "display.bmp"
+TEMP_IMAGE = "display.new.bmp"
 
 # Display behavior.
 BRIGHTNESS = 1
@@ -71,12 +71,13 @@ MQTT_PING_MS = 25000
 
 cosmic = CosmicUnicorn()
 graphics = PicoGraphics(DISPLAY)
-png = PNG(graphics)
 
 WIDTH = CosmicUnicorn.WIDTH
+HEIGHT = CosmicUnicorn.HEIGHT
 BLACK = graphics.create_pen(0, 0, 0)
 URL_SAFE_BYTES = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
 BANNER_QUEUE = []
+IMAGE_INFO = None
 
 
 def file_exists(path):
@@ -132,6 +133,7 @@ def build_banner_request(text=None, overrides=None):
         "background": BANNER_BACKGROUND,
         "padding": BANNER_PADDING,
         "gap": BANNER_GAP,
+        "format": BANNER_FORMAT,
     }
 
     if overrides:
@@ -153,6 +155,7 @@ def build_image_url(banner_request):
     add_query_param(query_parts, "background", banner_request.get("background"))
     add_query_param(query_parts, "padding", banner_request.get("padding"))
     add_query_param(query_parts, "gap", banner_request.get("gap"))
+    add_query_param(query_parts, "format", banner_request.get("format"))
 
     return "{}?{}".format(BANNER_BASE_URL, "&".join(query_parts))
 
@@ -253,12 +256,107 @@ def activate_download():
         return False
 
 
+def read_le_u16(data, offset):
+    return data[offset] | (data[offset + 1] << 8)
+
+
+def read_le_u32(data, offset):
+    return (
+        data[offset]
+        | (data[offset + 1] << 8)
+        | (data[offset + 2] << 16)
+        | (data[offset + 3] << 24)
+    )
+
+
+def read_le_i32(data, offset):
+    value = read_le_u32(data, offset)
+    if value & 0x80000000:
+        return value - 0x100000000
+    return value
+
+
+def load_bmp_info(path):
+    global IMAGE_INFO
+
+    try:
+        source = open(path, "rb")
+        header = source.read(54)
+
+        if len(header) < 54 or header[0:2] != b"BM":
+            print("Invalid BMP header")
+            return None
+
+        pixel_offset = read_le_u32(header, 10)
+        dib_size = read_le_u32(header, 14)
+        width = read_le_i32(header, 18)
+        stored_height = read_le_i32(header, 22)
+        planes = read_le_u16(header, 26)
+        bits_per_pixel = read_le_u16(header, 28)
+        compression = read_le_u32(header, 30)
+        colors_used = read_le_u32(header, 46)
+
+        if width <= 0 or stored_height == 0:
+            print("Invalid BMP size")
+            return None
+
+        if planes != 1 or bits_per_pixel not in (8, 24) or compression != 0:
+            print("Unsupported BMP format")
+            return None
+
+        height = abs(stored_height)
+        top_down = stored_height < 0
+        palette = []
+
+        if bits_per_pixel == 8:
+            palette_offset = 14 + dib_size
+            palette_entries = colors_used or ((pixel_offset - palette_offset) // 4)
+            if palette_entries <= 0 or palette_entries > 256:
+                palette_entries = 256
+
+            source.seek(palette_offset)
+            palette_data = source.read(palette_entries * 4)
+            if len(palette_data) < palette_entries * 4:
+                print("Invalid BMP palette")
+                return None
+
+            for index in range(palette_entries):
+                base = index * 4
+                blue = palette_data[base]
+                green = palette_data[base + 1]
+                red = palette_data[base + 2]
+                palette.append(graphics.create_pen(red, green, blue))
+
+        bytes_per_pixel = bits_per_pixel // 8
+
+        IMAGE_INFO = {
+            "width": width,
+            "height": height,
+            "bits_per_pixel": bits_per_pixel,
+            "bytes_per_pixel": bytes_per_pixel,
+            "top_down": top_down,
+            "pixel_offset": pixel_offset,
+            "row_stride": ((width * bytes_per_pixel + 3) // 4) * 4,
+            "palette": palette,
+        }
+        return IMAGE_INFO
+    except Exception as error:
+        print("Invalid BMP:", error)
+        return None
+    finally:
+        try:
+            source.close()
+        except Exception:
+            pass
+
+
 def load_image_width(path):
     try:
-        png.open_file(path)
-        return png.get_width()
-    except RuntimeError as error:
-        print("Invalid PNG:", error)
+        info = load_bmp_info(path)
+        if info is not None:
+            return info["width"]
+    except Exception as error:
+        print("Invalid image:", error)
         return None
 
 
@@ -295,13 +393,66 @@ def draw_frame(image_width, x):
     graphics.set_pen(BLACK)
     graphics.clear()
 
-    if image_width is not None:
-        if x > 0:
-            png.decode(x, 0, source=(0, 0, WIDTH - x, 32))
-        elif x > -image_width:
-            png.decode(0, 0, source=(-x, 0, WIDTH, 32))
+    if image_width is not None and IMAGE_INFO is not None:
+        draw_bmp_frame(x)
 
     cosmic.update(graphics)
+
+
+def draw_bmp_frame(x):
+    info = IMAGE_INFO
+    palette = info["palette"]
+    image_width = info["width"]
+    image_height = info["height"]
+
+    visible_width = WIDTH
+    source_x = 0
+    screen_x = x
+
+    if x > 0:
+        visible_width = min(WIDTH - x, image_width)
+    else:
+        source_x = -x
+        screen_x = 0
+        visible_width = min(WIDTH, image_width - source_x)
+
+    if visible_width <= 0:
+        return
+
+    visible_height = min(HEIGHT, image_height)
+
+    try:
+        source = open(IMAGE, "rb")
+        for y in range(visible_height):
+            if info["top_down"]:
+                file_row = y
+            else:
+                file_row = image_height - 1 - y
+
+            row_offset = info["pixel_offset"] + file_row * info["row_stride"] + source_x * info["bytes_per_pixel"]
+            source.seek(row_offset)
+            row = source.read(visible_width * info["bytes_per_pixel"])
+
+            if info["bits_per_pixel"] == 8:
+                for column, palette_index in enumerate(row):
+                    if palette_index < len(palette):
+                        graphics.set_pen(palette[palette_index])
+                        graphics.pixel(screen_x + column, y)
+            else:
+                for column in range(visible_width):
+                    base = column * 3
+                    blue = row[base]
+                    green = row[base + 1]
+                    red = row[base + 2]
+                    graphics.set_pen(graphics.create_pen(red, green, blue))
+                    graphics.pixel(screen_x + column, y)
+    except Exception as error:
+        print("BMP draw failed:", error)
+    finally:
+        try:
+            source.close()
+        except Exception:
+            pass
 
 
 def advance_scroll(x, image_width):
@@ -359,6 +510,7 @@ def normalize_banner_request(payload):
         "background",
         "padding",
         "gap",
+        "format",
     )
 
     for key in allowed_keys:
@@ -376,7 +528,7 @@ def normalize_banner_request(payload):
                 print("Invalid banner field:", key)
                 return None
 
-    for key in ("font", "color", "background"):
+    for key in ("font", "color", "background", "format"):
         if key in request and request[key] is not None:
             request[key] = str(request[key]).strip()
 

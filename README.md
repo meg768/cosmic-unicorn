@@ -6,7 +6,7 @@ This version uses:
 
 - Wi-Fi for networking
 - MQTT for incoming messages
-- [banner.egelberg.se](http://banner.egelberg.se) to render text as PNG
+- [banner.egelberg.se](http://banner.egelberg.se) to render text as BMP
 - a local queue on the Pico so multiple messages are shown in order
 
 ## Idea
@@ -19,8 +19,8 @@ Instead, it works like this:
 2. The Pico connects to MQTT
 3. A message arrives on the `cosmic-unicorn` topic
 4. The Pico builds a URL to `banner.egelberg.se`
-5. `banner` returns a PNG
-6. The Pico downloads the PNG and scrolls it across the display
+5. `banner` returns a 24-bit BMP
+6. The Pico downloads the BMP and scrolls it across the display
 7. The next MQTT message waits in queue until the current banner is finished
 
 This lets typography, emojis, colors, and layout be handled server-side, while the Pico only needs to display the image.
@@ -42,7 +42,7 @@ On the Pico itself you should have:
 - `umqtt/simple.py`
 - `umqtt/__init__.py`
 
-`display.png` is created and updated on the Pico at runtime and does not need to exist in the repository beforehand.
+`display.bmp` is created and updated on the Pico at runtime and does not need to exist in the repository beforehand.
 
 ## Configuration
 
@@ -76,9 +76,10 @@ BANNER_FONT = ""
 BANNER_SIZE = None
 BANNER_WIDTH = None
 BANNER_COLOR = None
-BANNER_BACKGROUND = None
+BANNER_BACKGROUND = "black"
 BANNER_PADDING = None
 BANNER_GAP = None
+BANNER_FORMAT = "bmp24"
 ```
 
 These values are used to build the `banner` URL.
@@ -127,6 +128,7 @@ Currently supported fields:
 - `background`
 - `padding`
 - `gap`
+- `format`
 
 ## Text Syntax
 
@@ -216,7 +218,7 @@ The Pico always fetches plain `http://` images from:
 `main.py` builds URLs roughly like this:
 
 ```text
-http://banner.egelberg.se/?text=Hello&height=32&font=impact&color=gold
+http://banner.egelberg.se/?text=Hello&height=32&font=impact&color=gold&format=bmp24
 ```
 
 This means all text layout happens outside the Pico.
