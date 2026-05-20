@@ -65,7 +65,7 @@ TEMP_IMAGE = "display.new.png"
 
 # Display behavior.
 BRIGHTNESS = 1
-SCROLL_DELAY = 0
+SCROLL_DELAY = 0.02
 MQTT_RECONNECT_MS = 5000
 MQTT_PING_MS = 25000
 
