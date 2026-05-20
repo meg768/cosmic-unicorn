@@ -79,7 +79,7 @@ BANNER_COLOR = None
 BANNER_BACKGROUND = "black"
 BANNER_PADDING = None
 BANNER_GAP = None
-BANNER_FORMAT = "bmp24"
+BANNER_FORMAT = "bmp"
 ```
 
 These values are used to build the `banner` URL.
@@ -218,7 +218,7 @@ The Pico always fetches plain `http://` images from:
 `main.py` builds URLs roughly like this:
 
 ```text
-http://banner.egelberg.se/?text=Hello&height=32&font=impact&color=gold&format=bmp24
+http://banner.egelberg.se/?text=Hello&height=32&font=impact&color=gold&format=bmp
 ```
 
 This means all text layout happens outside the Pico.

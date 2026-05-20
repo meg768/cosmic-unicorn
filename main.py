@@ -57,7 +57,7 @@ BANNER_COLOR = None
 BANNER_BACKGROUND = "black"
 BANNER_PADDING = None
 BANNER_GAP = None
-BANNER_FORMAT = "bmp24"
+BANNER_FORMAT = "bmp"
 
 # Local files used for safe image updates.
 IMAGE = "display.bmp"
@@ -294,50 +294,25 @@ def load_bmp_info(path):
         planes = read_le_u16(header, 26)
         bits_per_pixel = read_le_u16(header, 28)
         compression = read_le_u32(header, 30)
-        colors_used = read_le_u32(header, 46)
 
         if width <= 0 or stored_height == 0:
             print("Invalid BMP size")
             return None
 
-        if planes != 1 or bits_per_pixel not in (8, 24) or compression != 0:
+        if planes != 1 or bits_per_pixel != 24 or compression != 0:
             print("Unsupported BMP format")
             return None
 
         height = abs(stored_height)
         top_down = stored_height < 0
-        palette = []
-
-        if bits_per_pixel == 8:
-            palette_offset = 14 + dib_size
-            palette_entries = colors_used or ((pixel_offset - palette_offset) // 4)
-            if palette_entries <= 0 or palette_entries > 256:
-                palette_entries = 256
-
-            source.seek(palette_offset)
-            palette_data = source.read(palette_entries * 4)
-            if len(palette_data) < palette_entries * 4:
-                print("Invalid BMP palette")
-                return None
-
-            for index in range(palette_entries):
-                base = index * 4
-                blue = palette_data[base]
-                green = palette_data[base + 1]
-                red = palette_data[base + 2]
-                palette.append(graphics.create_pen(red, green, blue))
-
-        bytes_per_pixel = bits_per_pixel // 8
 
         IMAGE_INFO = {
             "width": width,
             "height": height,
-            "bits_per_pixel": bits_per_pixel,
-            "bytes_per_pixel": bytes_per_pixel,
+            "bytes_per_pixel": 3,
             "top_down": top_down,
             "pixel_offset": pixel_offset,
-            "row_stride": ((width * bytes_per_pixel + 3) // 4) * 4,
-            "palette": palette,
+            "row_stride": ((width * 3 + 3) // 4) * 4,
         }
         return IMAGE_INFO
     except Exception as error:
@@ -401,7 +376,6 @@ def draw_frame(image_width, x):
 
 def draw_bmp_frame(x):
     info = IMAGE_INFO
-    palette = info["palette"]
     image_width = info["width"]
     image_height = info["height"]
 
@@ -433,19 +407,13 @@ def draw_bmp_frame(x):
             source.seek(row_offset)
             row = source.read(visible_width * info["bytes_per_pixel"])
 
-            if info["bits_per_pixel"] == 8:
-                for column, palette_index in enumerate(row):
-                    if palette_index < len(palette):
-                        graphics.set_pen(palette[palette_index])
-                        graphics.pixel(screen_x + column, y)
-            else:
-                for column in range(visible_width):
-                    base = column * 3
-                    blue = row[base]
-                    green = row[base + 1]
-                    red = row[base + 2]
-                    graphics.set_pen(graphics.create_pen(red, green, blue))
-                    graphics.pixel(screen_x + column, y)
+            for column in range(visible_width):
+                base = column * 3
+                blue = row[base]
+                green = row[base + 1]
+                red = row[base + 2]
+                graphics.set_pen(graphics.create_pen(red, green, blue))
+                graphics.pixel(screen_x + column, y)
     except Exception as error:
         print("BMP draw failed:", error)
     finally:
