@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:shaper="http://www.shapertools.com/namespaces/shaper" width="220mm" height="220mm" viewBox="0 0 220 220">
+  <title>Operation 01 - pocket 205 x 205 mm - cut depth 5 mm</title>
+  <desc>First milling operation. Centered 205 x 205 mm pocket with R3 corners. Use a 6 mm cutter. Cut depth: 5 mm from the top face. This is the display resting level.</desc>
+  <polygon id="origin_anchor_top_left_board_corner" points="0,0 8,0 0,12" fill="#ff0000" stroke="none"/>
+  <path id="pocket_205x205_depth_5mm" shaper:cutDepth="5mm" d="M 10.5 7.5 H 209.5 A 3 3 0 0 1 212.5 10.5 V 209.5 A 3 3 0 0 1 209.5 212.5 H 10.5 A 3 3 0 0 1 7.5 209.5 V 10.5 A 3 3 0 0 1 10.5 7.5 Z" fill="none" stroke="#000000" stroke-width="0.1"/>
+</svg>

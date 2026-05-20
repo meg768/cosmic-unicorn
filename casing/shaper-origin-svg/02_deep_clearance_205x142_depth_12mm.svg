@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:shaper="http://www.shapertools.com/namespaces/shaper" width="220mm" height="220mm" viewBox="0 0 220 220">
+  <title>Operation 02 - deep clearance 205 x 142 mm - cut depth 12 mm</title>
+  <desc>Second milling operation. Full-width 205 x 142 mm deep clearance with R4 corners. Use an 8 mm cutter. Cut depth: 12 mm from the top face. Leaves 60 mm resting area at top and 3 mm resting area at bottom from operation 01.</desc>
+  <polygon id="origin_anchor_top_left_board_corner" points="0,0 8,0 0,12" fill="#ff0000" stroke="none"/>
+  <path id="deep_clearance_205x142_depth_12mm" shaper:cutDepth="12mm" d="M 11.5 67.5 H 208.5 A 4 4 0 0 1 212.5 71.5 V 205.5 A 4 4 0 0 1 208.5 209.5 H 11.5 A 4 4 0 0 1 7.5 205.5 V 71.5 A 4 4 0 0 1 11.5 67.5 Z" fill="none" stroke="#000000" stroke-width="0.1"/>
+</svg>

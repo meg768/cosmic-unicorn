@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="220mm" height="220mm" viewBox="0 0 220 220">
+  <rect x="0" y="0" width="220" height="220" fill="#ffffff"/>
+  <polygon points="0,0 8,0 0,12" fill="#ff0000" stroke="none"/>
+  <path d="M 4 0 H 216 A 4 4 0 0 1 220 4 V 216 A 4 4 0 0 1 216 220 H 4 A 4 4 0 0 1 0 216 V 4 A 4 4 0 0 1 4 0 Z" fill="none" stroke="#000000" stroke-width="0.4"/>
+  <text x="110" y="103" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" fill="#000000">OP 03</text>
+  <text x="110" y="113" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" fill="#000000">OUTER PROFILE 220 x 220 mm</text>
+  <text x="110" y="123" text-anchor="middle" font-family="Arial, sans-serif" font-size="8" fill="#000000">R4 CORNERS</text>
+  <text x="110" y="133" text-anchor="middle" font-family="Arial, sans-serif" font-size="6" fill="#000000">depth: through-cut if cutting the profile out</text>
+  <text x="12" y="18" font-family="Arial, sans-serif" font-size="5" fill="#cc0000">ANCHOR: upper-left corner</text>
+</svg>

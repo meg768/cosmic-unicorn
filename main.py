@@ -1,7 +1,13 @@
 import os
+import random
 import socket
 import time
 import machine
+
+try:
+    import gc
+except ImportError:
+    gc = None
 
 try:
     import ujson as json
@@ -65,9 +71,12 @@ TEMP_IMAGE = "display.new.bmp"
 
 # Display behavior.
 BRIGHTNESS = 1
-SCROLL_DELAY = 0.02
+SCROLL_DELAY = 0.01
 MQTT_RECONNECT_MS = 5000
 MQTT_PING_MS = 25000
+IDLE_ANIMATION_DIR = "cufs"
+IDLE_MIN_MS = 60000
+IDLE_INTERVAL_MS = 17 * 60 * 1000
 
 cosmic = CosmicUnicorn()
 graphics = PicoGraphics(DISPLAY)
@@ -260,6 +269,13 @@ def read_le_u16(data, offset):
     return data[offset] | (data[offset + 1] << 8)
 
 
+def rgb565_to_pen(value):
+    red = ((value >> 11) & 0x1F) * 255 // 31
+    green = ((value >> 5) & 0x3F) * 255 // 63
+    blue = (value & 0x1F) * 255 // 31
+    return graphics.create_pen(red, green, blue)
+
+
 def read_le_u32(data, offset):
     return (
         data[offset]
@@ -421,6 +437,102 @@ def draw_bmp_frame(x):
             source.close()
         except Exception:
             pass
+
+
+def join_path(directory, filename):
+    if directory.endswith("/"):
+        return directory + filename
+    return directory + "/" + filename
+
+
+def list_idle_animations():
+    try:
+        filenames = os.listdir(IDLE_ANIMATION_DIR)
+    except OSError:
+        return []
+
+    animations = []
+    for filename in filenames:
+        if filename.lower().endswith(".cuf"):
+            animations.append(join_path(IDLE_ANIMATION_DIR, filename))
+
+    animations.sort()
+    return animations
+
+
+def choose_idle_animation():
+    animations = list_idle_animations()
+    if not animations:
+        return None
+
+    return animations[random.randint(0, len(animations) - 1)]
+
+
+def read_cuf_header(source):
+    magic = source.read(4)
+    if magic != b"CUF3":
+        raise ValueError("Unsupported CUF animation")
+
+    header = source.read(10)
+    if len(header) != 10:
+        raise ValueError("Invalid CUF header")
+
+    width = read_le_u16(header, 0)
+    height = read_le_u16(header, 2)
+    frame_count = read_le_u16(header, 4)
+    delay_ms = read_le_u16(header, 6)
+    palette_count = read_le_u16(header, 8)
+    palette = []
+
+    for _ in range(palette_count):
+        color_data = source.read(2)
+        if len(color_data) != 2:
+            raise ValueError("Invalid CUF palette")
+        palette.append(rgb565_to_pen(read_le_u16(color_data, 0)))
+
+    return {
+        "width": width,
+        "height": height,
+        "frame_count": frame_count,
+        "delay_ms": delay_ms,
+        "palette": palette,
+    }
+
+
+def read_cuf_frame_length(source):
+    data = source.read(2)
+    if len(data) != 2:
+        raise ValueError("Invalid CUF frame")
+    return read_le_u16(data, 0)
+
+
+def draw_cuf_frame(frame_data, width, height, palette):
+    graphics.set_pen(BLACK)
+    graphics.clear()
+
+    x_offset = max(0, (WIDTH - width) // 2)
+    y_offset = max(0, (HEIGHT - height) // 2)
+    visible_width = min(width, WIDTH)
+    visible_height = min(height, HEIGHT)
+    pixel_index = 0
+
+    for offset in range(0, len(frame_data), 2):
+        run_length = frame_data[offset]
+        color_index = frame_data[offset + 1]
+        pen = BLACK
+        if color_index < len(palette):
+            pen = palette[color_index]
+
+        graphics.set_pen(pen)
+
+        for _ in range(run_length):
+            x = pixel_index % width
+            y = pixel_index // width
+            if x < visible_width and y < visible_height:
+                graphics.pixel(x + x_offset, y + y_offset)
+            pixel_index += 1
+
+    cosmic.update(graphics)
 
 
 def advance_scroll(x, image_width):
@@ -641,6 +753,102 @@ def ping_mqtt(client):
         return None
 
 
+def maintain_mqtt(mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
+    if not mqtt_configured():
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+    if mqtt_client is None:
+        now = time.ticks_ms()
+        if time.ticks_diff(now, next_mqtt_retry_at) >= 0:
+            mqtt_client, wlan = connect_mqtt(wlan)
+            next_mqtt_retry_at = time.ticks_add(now, MQTT_RECONNECT_MS)
+            next_mqtt_ping_at = time.ticks_add(now, MQTT_PING_MS)
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+    mqtt_client = poll_mqtt(mqtt_client)
+    if mqtt_client is None:
+        next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), MQTT_RECONNECT_MS)
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+    now = time.ticks_ms()
+    if time.ticks_diff(now, next_mqtt_ping_at) >= 0:
+        mqtt_client = ping_mqtt(mqtt_client)
+        if mqtt_client is None:
+            next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), MQTT_RECONNECT_MS)
+        else:
+            next_mqtt_ping_at = time.ticks_add(now, MQTT_PING_MS)
+
+    return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+
+def collect_garbage():
+    if gc is not None:
+        gc.collect()
+
+
+def play_idle_animation(mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
+    animation_path = choose_idle_animation()
+    if animation_path is None:
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+    collect_garbage()
+    started_at = time.ticks_ms()
+    loops = 0
+
+    print("Idle animation:", animation_path)
+
+    while True:
+        source = None
+        try:
+            source = open(animation_path, "rb")
+            header = read_cuf_header(source)
+            width = header["width"]
+            height = header["height"]
+            frame_count = header["frame_count"]
+            delay_ms = header["delay_ms"]
+            palette = header["palette"]
+
+            for frame_index in range(frame_count):
+                frame_started_at = time.ticks_ms()
+                frame_size = read_cuf_frame_length(source)
+                frame_data = source.read(frame_size)
+                if len(frame_data) != frame_size:
+                    break
+
+                draw_cuf_frame(frame_data, width, height, palette)
+                mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = maintain_mqtt(
+                    mqtt_client,
+                    wlan,
+                    next_mqtt_retry_at,
+                    next_mqtt_ping_at,
+                )
+
+                elapsed = time.ticks_diff(time.ticks_ms(), frame_started_at)
+                remaining = delay_ms - elapsed
+                if remaining > 0:
+                    time.sleep_ms(remaining)
+
+                if frame_index % 20 == 0:
+                    collect_garbage()
+        except Exception as error:
+            print("Idle animation failed:", error)
+            break
+        finally:
+            try:
+                source.close()
+            except Exception:
+                pass
+
+        loops += 1
+        collect_garbage()
+
+        if time.ticks_diff(time.ticks_ms(), started_at) >= IDLE_MIN_MS:
+            break
+
+    print("Idle animation done:", animation_path, "loops:", loops)
+    return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+
 def apply_banner_request(banner_request, image_width, wlan):
     refreshed, wlan = refresh_image(banner_request, wlan)
 
@@ -674,31 +882,19 @@ def run():
     mqtt_client = None
     next_mqtt_retry_at = time.ticks_ms()
     next_mqtt_ping_at = time.ticks_ms()
+    next_idle_animation_at = time.ticks_add(time.ticks_ms(), IDLE_INTERVAL_MS)
     x = WIDTH
 
     while True:
         draw_frame(image_width, x)
         x = advance_scroll(x, image_width)
 
-        if mqtt_configured():
-            if mqtt_client is None:
-                now = time.ticks_ms()
-                if time.ticks_diff(now, next_mqtt_retry_at) >= 0:
-                    mqtt_client, wlan = connect_mqtt(wlan)
-                    next_mqtt_retry_at = time.ticks_add(now, MQTT_RECONNECT_MS)
-                    next_mqtt_ping_at = time.ticks_add(now, MQTT_PING_MS)
-            else:
-                mqtt_client = poll_mqtt(mqtt_client)
-                if mqtt_client is None:
-                    next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), MQTT_RECONNECT_MS)
-                else:
-                    now = time.ticks_ms()
-                    if time.ticks_diff(now, next_mqtt_ping_at) >= 0:
-                        mqtt_client = ping_mqtt(mqtt_client)
-                        if mqtt_client is None:
-                            next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), MQTT_RECONNECT_MS)
-                        else:
-                            next_mqtt_ping_at = time.ticks_add(now, MQTT_PING_MS)
+        mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = maintain_mqtt(
+            mqtt_client,
+            wlan,
+            next_mqtt_retry_at,
+            next_mqtt_ping_at,
+        )
 
         if animation_finished(image_width, x):
             next_request = dequeue_banner_request()
@@ -708,6 +904,23 @@ def run():
         if next_request is not None:
             current_request = next_request
             current_request, image_width, x, wlan = apply_banner_request(current_request, image_width, wlan)
+        elif animation_finished(image_width, x):
+            now = time.ticks_ms()
+            if time.ticks_diff(now, next_idle_animation_at) < 0:
+                image_width = None
+                x = WIDTH
+                time.sleep(SCROLL_DELAY)
+                continue
+
+            mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = play_idle_animation(
+                mqtt_client,
+                wlan,
+                next_mqtt_retry_at,
+                next_mqtt_ping_at,
+            )
+            next_idle_animation_at = time.ticks_add(time.ticks_ms(), IDLE_INTERVAL_MS)
+            image_width = None
+            x = WIDTH
 
         time.sleep(SCROLL_DELAY)
 

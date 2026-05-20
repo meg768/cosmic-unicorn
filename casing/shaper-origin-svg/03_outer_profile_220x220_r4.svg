@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:shaper="http://www.shapertools.com/namespaces/shaper" width="220mm" height="220mm" viewBox="0 0 220 220">
+  <title>Operation 03 - outer profile 220 x 220 mm - R4 corners - through cut or final trim</title>
+  <desc>Optional final operation. Outer board profile 220 x 220 mm with R4 corners. Use an 8 mm cutter. Cut depth depends on workflow: through cut for final profile, or shallow trace if only used as a reference.</desc>
+  <polygon id="origin_anchor_top_left_board_corner" points="0,0 8,0 0,12" fill="#ff0000" stroke="none"/>
+  <path id="outer_profile_220x220_r4" d="M 4 0 H 216 A 4 4 0 0 1 220 4 V 216 A 4 4 0 0 1 216 220 H 4 A 4 4 0 0 1 0 216 V 4 A 4 4 0 0 1 4 0 Z" fill="none" stroke="#000000" stroke-width="0.1"/>
+</svg>

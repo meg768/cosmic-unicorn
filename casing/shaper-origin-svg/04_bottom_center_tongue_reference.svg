@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="220mm" height="220mm" viewBox="0 0 220 220">
+  <title>Bottom center tongue reference</title>
+  <desc>Closed reference shape for the small centered tongue/ledge that remains at the bottom of the 12 mm deep pocket. This is not a cut operation.</desc>
+  <polygon id="origin_anchor_top_left_board_corner" points="0,0 8,0 0,12" fill="#ff0000" stroke="none"/>
+  <path id="bottom_center_tongue_reference" d="M 102 209.5 V 199.5 A 4 4 0 0 1 106 195.5 H 114 A 4 4 0 0 1 118 199.5 V 209.5 Z" fill="#00aa88" fill-opacity="0.45" stroke="#007766" stroke-width="0.25"/>
+</svg>

@@ -41,6 +41,7 @@ On the Pico itself you should have:
 - `secrets.py`
 - `umqtt/simple.py`
 - `umqtt/__init__.py`
+- `cufs/*.cuf` for idle animations, optional
 
 `display.bmp` is created and updated on the Pico at runtime and does not need to exist in the repository beforehand.
 
@@ -208,6 +209,26 @@ This means that if Homey sends multiple messages in quick succession:
 - messages are shown in order
 
 This is important for Homey flows where several RSS or status messages may arrive almost at the same time.
+
+## Idle Animations
+
+When there are no queued MQTT banners, `main.py` keeps the display black most of the time and occasionally plays local idle animations from `cufs/`.
+
+The idle behavior is:
+
+- keep the display black while waiting
+- every 17 minutes, choose a random `.cuf` file from `cufs/`
+- play it for at least 60 seconds
+- short animations repeat until the 60 second window has passed
+- the current animation loop is always allowed to finish
+- MQTT is still polled while the display is black and while the animation plays
+- queued banners are shown immediately during black idle time, or after the current animation window is done
+
+GIF files in `gifs/` can be converted to compressed CUF files with:
+
+```bash
+python3 tools/gif_to_cuf.py gifs cufs
+```
 
 ## Banner Service
 
