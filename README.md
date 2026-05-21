@@ -31,45 +31,45 @@ The main files used in this project are:
 
 - [main.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/main.py)
 - [wifi.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/wifi.py)
-- [secrets.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/secrets.example.py)
+- [config.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/config.example.py)
 - [`umqtt/`](/Users/magnus/Documents/GitHub/cosmic-unicorn/umqtt)
 
 On the Pico itself you should have:
 
 - `main.py`
 - `wifi.py`
-- `secrets.py`
+- `config.py`
 - `umqtt/simple.py`
 - `umqtt/__init__.py`
-- `cufs/*.cuf` for idle animations, optional
+- `cufs/*.cuf` for MQTT-triggered animations, optional
+- `animations/gif.py` for converted GIF/CUF animations, optional
+- `animations/matrix.py` for the generated Matrix animation, optional
 
 `display.bmp` is created and updated on the Pico at runtime and does not need to exist in the repository beforehand.
 
 ## Configuration
 
-### `secrets.py`
+### `config.py`
 
-Create a local `secrets.py` based on [secrets.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/secrets.example.py).
+Create a local `config.py` based on [config.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/config.example.py).
 
-`secrets.py` is ignored in [`.gitignore`](/Users/magnus/Documents/GitHub/cosmic-unicorn/.gitignore) and should not be committed.
+`config.py` is ignored in [`.gitignore`](/Users/magnus/Documents/GitHub/cosmic-unicorn/.gitignore) and should not be committed.
 
 Example:
 
 ```python
 WIFI_SSID = "your-wifi-name"
 WIFI_PASSWORD = "your-wifi-password"
+COSMIC_UNICORN_MODEL = "Pico W"
 MQTT_HOST = "server.example.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "cosmic-unicorn"
 MQTT_USERNAME = "your-mqtt-username"
 MQTT_PASSWORD = "your-mqtt-password"
-```
 
-### `main.py`
+MQTT_RECONNECT_MS = 5000
+MQTT_PING_MS = 25000
 
-At the top of [main.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/main.py) you will find the local default banner configuration:
-
-```python
 BANNER_TEXT = "👍"
 BANNER_BASE_URL = "http://banner.egelberg.se/"
 BANNER_HEIGHT = 32
@@ -85,6 +85,11 @@ BANNER_FORMAT = "bmp"
 
 These values are used to build the `banner` URL.
 
+`COSMIC_UNICORN_MODEL` controls the scroll delay:
+
+- `"Pico W"` uses `0` ms
+- `"Pico 2 W"` uses `5` ms
+
 ## MQTT Format
 
 The project accepts two types of MQTT payloads.
@@ -97,16 +102,19 @@ The simplest format:
 Happy birthday! 🥳
 ```
 
-This becomes a banner using the default settings in `main.py`.
+This becomes a banner using the default settings in `config.py`.
 
 ### 2. JSON
 
-If the payload starts with `{`, it is parsed as JSON and passed on to `banner`.
+If the payload starts with `{`, it is parsed as JSON.
+
+JSON messages can be either text messages or animation messages. When `type` is omitted, the message is treated as `type: "text"` for backwards compatibility.
 
 Example:
 
 ```json
 {
+  "type": "text",
   "text": "Weather today [color=gold]☀️[/color] 18°C",
   "font": "impact",
   "size": 18,
@@ -118,8 +126,9 @@ Example:
 }
 ```
 
-Currently supported fields:
+Supported text fields:
 
+- `type`: optional, use `"text"` for explicit text messages
 - `text`
 - `height`
 - `width`
@@ -130,6 +139,38 @@ Currently supported fields:
 - `padding`
 - `gap`
 - `format`
+
+Animation example:
+
+```json
+{
+  "type": "animation",
+  "name": "matrix",
+  "duration": 60
+}
+```
+
+```json
+{
+  "type": "animation",
+  "name": "fireplace",
+  "duration": 120
+}
+```
+
+Supported animation fields:
+
+- `type`: use `"animation"`
+- `name`: optional; either `"matrix"` or the name of a `.cuf` file in `cufs/` without the `.cuf` extension
+- `duration`: duration in seconds, default `60`
+
+If `name` is omitted, a random available animation is chosen:
+
+```json
+{
+  "type": "animation"
+}
+```
 
 ## Text Syntax
 
@@ -210,19 +251,20 @@ This means that if Homey sends multiple messages in quick succession:
 
 This is important for Homey flows where several RSS or status messages may arrive almost at the same time.
 
-## Idle Animations
+## Animations
 
-When there are no queued MQTT banners, `main.py` keeps the display black most of the time and occasionally plays local idle animations from `cufs/`.
+Animations are triggered by MQTT JSON messages with `type: "animation"`.
 
-The idle behavior is:
+The animation behavior is:
 
-- keep the display black while waiting
-- every 17 minutes, choose a random `.cuf` file from `cufs/`
-- play it for at least 60 seconds
-- short animations repeat until the 60 second window has passed
+- the display stays black when the MQTT queue is empty
+- animation messages are queued in the same queue as text messages
+- `matrix` plays the generated Matrix animation from `animations/matrix.py`
+- other names play converted GIF/CUF animations from `cufs/`
+- CUF animations repeat until the requested duration has passed
 - the current animation loop is always allowed to finish
-- MQTT is still polled while the display is black and while the animation plays
-- queued banners are shown immediately during black idle time, or after the current animation window is done
+- MQTT is still polled while animations play
+- queued text messages wait until the current animation window is done
 
 GIF files in `gifs/` can be converted to compressed CUF files with:
 
@@ -268,7 +310,7 @@ Typical Thonny workflow:
 
 1. Connect to the Pico
 2. Make sure these files exist on `Raspberry Pi Pico`:
-   `main.py`, `wifi.py`, `secrets.py`, `umqtt/`
+   `main.py`, `wifi.py`, `config.py`, `umqtt/`
 3. Run `main.py`
 4. Look in the `Shell` for:
 

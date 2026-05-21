@@ -6,4 +6,4 @@ __pycache__/
 *~lock~
 
 # Local device/runtime secrets
-secrets.py
+config.py
