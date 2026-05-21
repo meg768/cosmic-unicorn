@@ -4,68 +4,27 @@ import socket
 import time
 import machine
 import config
+import gc
+import ujson as json
 
-try:
-    import gc
-except ImportError:
-    gc = None
-
-try:
-    import ujson as json
-except ImportError:
-    import json
-
-try:
-    from animations import gif as gif_animation
-except ImportError:
-    gif_animation = None
-
-try:
-    from animations import matrix as matrix_animation
-except ImportError:
-    matrix_animation = None
+from animations import gif as gif_animation
+from animations import matrix as matrix_animation
 
 from cosmic import CosmicUnicorn
 from picographics import PicoGraphics, DISPLAY_COSMIC_UNICORN as DISPLAY
 from wifi import connect_wifi
-
-try:
-    from umqtt.simple import MQTTClient
-except ImportError:
-    MQTTClient = None
+from umqtt.simple import MQTTClient
 
 
 # Overclock for smoother scrolling on the Cosmic Unicorn.
 machine.freq(200000000)
 
 
-def config_value(name, default=None):
-    return getattr(config, name, default)
-
-
-# Local files used for safe image updates.
-IMAGE = "display.bmp"
-TEMP_IMAGE = "display.new.bmp"
-
 # Display behavior.
-BRIGHTNESS = 1
-SCROLL_DELAY_MS_BY_MODEL = {
-    "Pico W": 0,
-    "Pico 2 W": 5,
-}
-SCROLL_DELAY_MS = SCROLL_DELAY_MS_BY_MODEL.get(config_value("COSMIC_UNICORN_MODEL", "Pico W"), 0)
-MQTT_RECONNECT_MS = config_value("MQTT_RECONNECT_MS", 5000)
-MQTT_PING_MS = config_value("MQTT_PING_MS", 25000)
-DEFAULT_ANIMATION_MS = 60000
-MATRIX_ANIMATION_NAME = "matrix"
-
 cosmic = CosmicUnicorn()
 graphics = PicoGraphics(DISPLAY)
 
-WIDTH = CosmicUnicorn.WIDTH
-HEIGHT = CosmicUnicorn.HEIGHT
 BLACK = graphics.create_pen(0, 0, 0)
-URL_SAFE_BYTES = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
 ACTION_QUEUE = []
 IMAGE_INFO = None
 
@@ -86,10 +45,11 @@ def safe_remove(path):
 
 
 def url_encode(text):
+    url_safe_bytes = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"
     parts = []
 
     for value in text.encode("utf-8"):
-        if value in URL_SAFE_BYTES:
+        if value in url_safe_bytes:
             parts.append(chr(value))
         else:
             parts.append("%{:02X}".format(value))
@@ -114,16 +74,16 @@ def add_query_param(parts, key, value):
 
 def build_banner_request(text=None, overrides=None):
     request = {
-        "text": config_value("BANNER_TEXT", "👍") if text is None else text,
-        "height": config_value("BANNER_HEIGHT", 32),
-        "width": config_value("BANNER_WIDTH"),
-        "font": config_value("BANNER_FONT", ""),
-        "size": config_value("BANNER_SIZE"),
-        "color": config_value("BANNER_COLOR"),
-        "background": config_value("BANNER_BACKGROUND", "black"),
-        "padding": config_value("BANNER_PADDING"),
-        "gap": config_value("BANNER_GAP"),
-        "format": config_value("BANNER_FORMAT", "bmp"),
+        "text": config.BANNER_TEXT if text is None else text,
+        "height": config.BANNER_HEIGHT,
+        "width": config.BANNER_WIDTH,
+        "font": config.BANNER_FONT,
+        "size": config.BANNER_SIZE,
+        "color": config.BANNER_COLOR,
+        "background": config.BANNER_BACKGROUND,
+        "padding": config.BANNER_PADDING,
+        "gap": config.BANNER_GAP,
+        "format": config.BANNER_FORMAT,
     }
 
     if overrides:
@@ -147,7 +107,7 @@ def build_image_url(banner_request):
     add_query_param(query_parts, "gap", banner_request.get("gap"))
     add_query_param(query_parts, "format", banner_request.get("format"))
 
-    return "{}?{}".format(config_value("BANNER_BASE_URL", "http://banner.egelberg.se/"), "&".join(query_parts))
+    return "{}?{}".format(config.BANNER_BASE_URL, "&".join(query_parts))
 
 
 def parse_url(url):
@@ -236,13 +196,16 @@ def download_file(url, target_path):
 
 
 def activate_download():
+    image = "display.bmp"
+    temp_image = "display.new.bmp"
+
     try:
-        safe_remove(IMAGE)
-        os.rename(TEMP_IMAGE, IMAGE)
+        safe_remove(image)
+        os.rename(temp_image, image)
         return True
     except OSError as error:
         print("Unable to activate new image:", error)
-        safe_remove(TEMP_IMAGE)
+        safe_remove(temp_image)
         return False
 
 
@@ -326,6 +289,8 @@ def load_image_width(path):
 
 
 def refresh_image(banner_request, wlan=None):
+    image = "display.bmp"
+    temp_image = "display.new.bmp"
     image_url = build_image_url(banner_request)
 
     if wlan is None or not wlan.isconnected():
@@ -334,24 +299,26 @@ def refresh_image(banner_request, wlan=None):
         return False, None
 
     print("Downloading:", banner_request.get("text", ""))
-    if not download_file(image_url, TEMP_IMAGE):
-        safe_remove(TEMP_IMAGE)
-        safe_remove(IMAGE)
+    if not download_file(image_url, temp_image):
+        safe_remove(temp_image)
+        safe_remove(image)
         return False, wlan
 
-    if load_image_width(TEMP_IMAGE) is None:
-        safe_remove(TEMP_IMAGE)
-        safe_remove(IMAGE)
+    if load_image_width(temp_image) is None:
+        safe_remove(temp_image)
+        safe_remove(image)
         return False, wlan
 
     return activate_download(), wlan
 
 
 def load_image():
-    if not file_exists(IMAGE):
+    image = "display.bmp"
+
+    if not file_exists(image):
         return None
 
-    return load_image_width(IMAGE)
+    return load_image_width(image)
 
 
 def draw_frame(image_width, x):
@@ -369,24 +336,24 @@ def draw_bmp_frame(x):
     image_width = info["width"]
     image_height = info["height"]
 
-    visible_width = WIDTH
+    visible_width = CosmicUnicorn.WIDTH
     source_x = 0
     screen_x = x
 
     if x > 0:
-        visible_width = min(WIDTH - x, image_width)
+        visible_width = min(CosmicUnicorn.WIDTH - x, image_width)
     else:
         source_x = -x
         screen_x = 0
-        visible_width = min(WIDTH, image_width - source_x)
+        visible_width = min(CosmicUnicorn.WIDTH, image_width - source_x)
 
     if visible_width <= 0:
         return
 
-    visible_height = min(HEIGHT, image_height)
+    visible_height = min(CosmicUnicorn.HEIGHT, image_height)
 
     try:
-        source = open(IMAGE, "rb")
+        source = open("display.bmp", "rb")
         for y in range(visible_height):
             if info["top_down"]:
                 file_row = y
@@ -424,44 +391,23 @@ def advance_scroll(x, image_width):
 
 
 def initialize_display():
-    cosmic.set_brightness(BRIGHTNESS)
-    draw_frame(None, WIDTH)
-
-
-def initialize_image(banner_request, wlan):
-    if mqtt_configured():
-        return None, wlan
-
-    refreshed, wlan = refresh_image(banner_request, wlan)
-
-    if refreshed:
-        return load_image(), wlan
-
-    return None, wlan
-
-
-def mqtt_configured():
-    return bool(
-        config_value("MQTT_HOST")
-        and config_value("MQTT_TOPIC")
-        and config_value("MQTT_USERNAME")
-        and config_value("MQTT_PASSWORD")
-    )
+    cosmic.set_brightness(1)
+    draw_frame(None, CosmicUnicorn.WIDTH)
 
 
 def mqtt_port():
     try:
-        return int(config_value("MQTT_PORT", 1883))
+        return int(config.MQTT_PORT)
     except Exception:
         return 1883
 
 
 def print_mqtt_settings():
-    print("MQTT host:", config_value("MQTT_HOST"))
+    print("MQTT host:", config.MQTT_HOST)
     print("MQTT port:", mqtt_port())
-    print("MQTT topic:", config_value("MQTT_TOPIC"))
-    print("MQTT username set:", bool(config_value("MQTT_USERNAME")))
-    print("MQTT password set:", bool(config_value("MQTT_PASSWORD")))
+    print("MQTT topic:", config.MQTT_TOPIC)
+    print("MQTT username set:", bool(config.MQTT_USERNAME))
+    print("MQTT password set:", bool(config.MQTT_PASSWORD))
 
 
 def build_mqtt_client_id():
@@ -525,7 +471,7 @@ def normalize_animation_action(payload):
 
     duration = payload.get("duration", payload.get("duration_seconds", None))
     if duration is None:
-        duration_ms = DEFAULT_ANIMATION_MS
+        duration_ms = 60000
     else:
         try:
             duration_ms = int(duration) * 1000
@@ -624,13 +570,6 @@ def handle_mqtt_message(topic, message):
 
 
 def connect_mqtt(wlan=None):
-    if not mqtt_configured():
-        return None, wlan
-
-    if MQTTClient is None:
-        print("MQTT unavailable: umqtt.simple not found")
-        return None, wlan
-
     if wlan is None or not wlan.isconnected():
         wlan = connect_wifi()
     if not wlan:
@@ -642,18 +581,18 @@ def connect_mqtt(wlan=None):
         print_mqtt_settings()
         client = MQTTClient(
             client_id=to_bytes(build_mqtt_client_id()),
-            server=config_value("MQTT_HOST"),
+            server=config.MQTT_HOST,
             port=mqtt_port(),
-            user=to_bytes(config_value("MQTT_USERNAME")),
-            password=to_bytes(config_value("MQTT_PASSWORD")),
+            user=to_bytes(config.MQTT_USERNAME),
+            password=to_bytes(config.MQTT_PASSWORD),
             keepalive=60,
         )
         client.set_callback(handle_mqtt_message)
         print("MQTT connecting...")
         client.connect()
-        print("MQTT subscribing:", config_value("MQTT_TOPIC"))
-        client.subscribe(to_bytes(config_value("MQTT_TOPIC")))
-        print("MQTT connected:", config_value("MQTT_TOPIC"))
+        print("MQTT subscribing:", config.MQTT_TOPIC)
+        client.subscribe(to_bytes(config.MQTT_TOPIC))
+        print("MQTT connected:", config.MQTT_TOPIC)
         return client, wlan
     except Exception as error:
         print("MQTT connection failed:", error)
@@ -717,36 +656,32 @@ def ping_mqtt(client):
 
 
 def maintain_mqtt(mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
-    if not mqtt_configured():
-        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
     if mqtt_client is None:
         now = time.ticks_ms()
         if time.ticks_diff(now, next_mqtt_retry_at) >= 0:
             mqtt_client, wlan = connect_mqtt(wlan)
-            next_mqtt_retry_at = time.ticks_add(now, MQTT_RECONNECT_MS)
-            next_mqtt_ping_at = time.ticks_add(now, MQTT_PING_MS)
+            next_mqtt_retry_at = time.ticks_add(now, config.MQTT_RECONNECT_MS)
+            next_mqtt_ping_at = time.ticks_add(now, config.MQTT_PING_MS)
         return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
     mqtt_client = poll_mqtt(mqtt_client)
     if mqtt_client is None:
-        next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), MQTT_RECONNECT_MS)
+        next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), config.MQTT_RECONNECT_MS)
         return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
     now = time.ticks_ms()
     if time.ticks_diff(now, next_mqtt_ping_at) >= 0:
         mqtt_client = ping_mqtt(mqtt_client)
         if mqtt_client is None:
-            next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), MQTT_RECONNECT_MS)
+            next_mqtt_retry_at = time.ticks_add(time.ticks_ms(), config.MQTT_RECONNECT_MS)
         else:
-            next_mqtt_ping_at = time.ticks_add(now, MQTT_PING_MS)
+            next_mqtt_ping_at = time.ticks_add(now, config.MQTT_PING_MS)
 
     return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
 
 def collect_garbage():
-    if gc is not None:
-        gc.collect()
+    gc.collect()
 
 
 def animation_basename(path):
@@ -763,9 +698,6 @@ def animation_basename(path):
 
 
 def find_gif_animation(name):
-    if gif_animation is None:
-        return None
-
     requested = str(name).strip().lower()
     for path in gif_animation.list_animations():
         if animation_basename(path).lower() == requested:
@@ -777,12 +709,10 @@ def find_gif_animation(name):
 def list_available_animations():
     animations = []
 
-    if matrix_animation is not None:
-        animations.append(("matrix", MATRIX_ANIMATION_NAME))
+    animations.append(("matrix", "matrix"))
 
-    if gif_animation is not None:
-        for path in gif_animation.list_animations():
-            animations.append(("gif", path))
+    for path in gif_animation.list_animations():
+        animations.append(("gif", path))
 
     animations.sort()
     return animations
@@ -797,13 +727,10 @@ def choose_random_animation():
 
 
 def play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
-    if matrix_animation is None:
-        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
     collect_garbage()
     started_at = time.ticks_ms()
-    worms = matrix_animation.create_worms(WIDTH, HEIGHT)
-    print("Animation:", MATRIX_ANIMATION_NAME)
+    worms = matrix_animation.create_worms(CosmicUnicorn.WIDTH, CosmicUnicorn.HEIGHT)
+    print("Animation:", "matrix")
 
     while time.ticks_diff(time.ticks_ms(), started_at) < duration_ms:
         frame_started_at = time.ticks_ms()
@@ -821,14 +748,11 @@ def play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, ne
             time.sleep_ms(remaining)
 
     collect_garbage()
-    print("Animation done:", MATRIX_ANIMATION_NAME)
+    print("Animation done:", "matrix")
     return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
 
 def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
-    if gif_animation is None:
-        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
     collect_garbage()
     started_at = time.ticks_ms()
     loops = 0
@@ -849,7 +773,17 @@ def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt
             for frame_index in range(frame_count):
                 frame_started_at = time.ticks_ms()
                 frame_data = gif_animation.read_frame(source)
-                gif_animation.render_frame(graphics, cosmic, BLACK, frame_data, width, height, palette, WIDTH, HEIGHT)
+                gif_animation.render_frame(
+                    graphics,
+                    cosmic,
+                    BLACK,
+                    frame_data,
+                    width,
+                    height,
+                    palette,
+                    CosmicUnicorn.WIDTH,
+                    CosmicUnicorn.HEIGHT,
+                )
                 mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = maintain_mqtt(
                     mqtt_client,
                     wlan,
@@ -885,7 +819,7 @@ def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt
 
 def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
     name = action.get("name")
-    duration_ms = action.get("duration_ms", DEFAULT_ANIMATION_MS)
+    duration_ms = action.get("duration_ms", 60000)
 
     if name is None:
         animation = choose_random_animation()
@@ -900,7 +834,7 @@ def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mq
         return play_gif_animation(animation_value, duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
 
     name = str(name).strip()
-    if name.lower() == MATRIX_ANIMATION_NAME:
+    if name.lower() == "matrix":
         return play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
 
     animation_path = find_gif_animation(name)
@@ -918,9 +852,9 @@ def apply_banner_request(banner_request, image_width, wlan):
         new_width = load_image()
         if new_width is not None:
             print("Image updated")
-            return banner_request, new_width, WIDTH, wlan
+            return banner_request, new_width, CosmicUnicorn.WIDTH, wlan
 
-    return banner_request, None, WIDTH, wlan
+    return banner_request, None, CosmicUnicorn.WIDTH, wlan
 
 
 def animation_finished(image_width, x):
@@ -933,18 +867,18 @@ def animation_finished(image_width, x):
 def run():
     initialize_display()
 
-    current_request = build_banner_request()
     wlan = connect_wifi()
     if wlan:
         print("WiFi connected")
     else:
         print("WiFi not connected")
 
-    image_width, wlan = initialize_image(current_request, wlan)
+    image_width = None
     mqtt_client = None
     next_mqtt_retry_at = time.ticks_ms()
     next_mqtt_ping_at = time.ticks_ms()
-    x = WIDTH
+    scroll_delay = {"Pico W": 0, "Pico 2 W": 3}[config.COSMIC_UNICORN_MODEL] / 1000
+    x = CosmicUnicorn.WIDTH
 
     while True:
         draw_frame(image_width, x)
@@ -973,15 +907,15 @@ def run():
                     next_mqtt_ping_at,
                 )
                 image_width = None
-                x = WIDTH
+                x = CosmicUnicorn.WIDTH
             else:
-                current_request = next_action.get("request", build_banner_request())
+                current_request = next_action["request"]
                 current_request, image_width, x, wlan = apply_banner_request(current_request, image_width, wlan)
         elif animation_finished(image_width, x):
             image_width = None
-            x = WIDTH
+            x = CosmicUnicorn.WIDTH
 
-        time.sleep(SCROLL_DELAY_MS / 1000)
+        time.sleep(scroll_delay)
 
 
 if __name__ == "__main__":

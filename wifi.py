@@ -3,15 +3,8 @@ import network
 import config
 
 
-def config_value(name, default=None):
-    return getattr(config, name, default)
-
-
 def connect_wifi(timeout=15):
-    wifi_ssid = config_value("WIFI_SSID")
-    wifi_password = config_value("WIFI_PASSWORD")
-
-    if not wifi_ssid or not wifi_password:
+    if not config.WIFI_SSID or not config.WIFI_PASSWORD:
         print("Missing WiFi credentials in config.py")
         return None
 
@@ -22,8 +15,8 @@ def connect_wifi(timeout=15):
         print("WiFi address:", wlan.ifconfig()[0])
         return wlan
 
-    print("Connecting to WiFi:", wifi_ssid)
-    wlan.connect(wifi_ssid, wifi_password)
+    print("Connecting to WiFi:", config.WIFI_SSID)
+    wlan.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
 
     start_time = time.time()
     while time.time() - start_time < timeout:
