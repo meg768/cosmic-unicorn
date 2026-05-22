@@ -1,6 +1,7 @@
 import machine
 import random
 import time
+import clock
 
 from cosmic import CosmicUnicorn
 from picographics import PicoGraphics, DISPLAY_COSMIC_UNICORN as DISPLAY
@@ -44,7 +45,7 @@ def hsl_to_rgb(hue, saturation, luminance):
 
 
 def current_time_hue():
-    now = time.localtime()
+    now = clock.localtime()
     hour = now[3] % 12
     minute = now[4]
     return int(360 * ((hour * 60) + minute) / (12 * 60))

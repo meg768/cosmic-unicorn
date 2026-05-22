@@ -12,7 +12,7 @@ from animations import matrix as matrix_animation
 
 from cosmic import CosmicUnicorn
 from picographics import PicoGraphics, DISPLAY_COSMIC_UNICORN as DISPLAY
-from wifi import connect_wifi
+from wifi import connect
 from umqtt.simple import MQTTClient
 
 
@@ -136,8 +136,7 @@ def parse_url(url):
 def download_file(url, target_path):
     try:
         host, port, path = parse_url(url)
-    except ValueError as error:
-        print("Bad URL:", error)
+    except ValueError:
         return False
 
     sock = None
@@ -172,7 +171,6 @@ def download_file(url, target_path):
                 status_code = int(status_parts[1]) if len(status_parts) > 1 else 0
 
                 if status_code != 200:
-                    print("HTTP error:", status_line)
                     return False
 
                 target.write(header_buffer[marker + 4:])
@@ -181,12 +179,10 @@ def download_file(url, target_path):
                 target.write(chunk)
 
         if not headers_done:
-            print("Invalid HTTP response")
             return False
 
         return True
-    except Exception as error:
-        print("Download failed:", error)
+    except Exception:
         return False
     finally:
         if target:
@@ -203,8 +199,7 @@ def activate_download():
         safe_remove(image)
         os.rename(temp_image, image)
         return True
-    except OSError as error:
-        print("Unable to activate new image:", error)
+    except OSError:
         safe_remove(temp_image)
         return False
 
@@ -237,7 +232,6 @@ def load_bmp_info(path):
         header = source.read(54)
 
         if len(header) < 54 or header[0:2] != b"BM":
-            print("Invalid BMP header")
             return None
 
         pixel_offset = read_le_u32(header, 10)
@@ -249,11 +243,9 @@ def load_bmp_info(path):
         compression = read_le_u32(header, 30)
 
         if width <= 0 or stored_height == 0:
-            print("Invalid BMP size")
             return None
 
         if planes != 1 or bits_per_pixel != 24 or compression != 0:
-            print("Unsupported BMP format")
             return None
 
         height = abs(stored_height)
@@ -268,8 +260,7 @@ def load_bmp_info(path):
             "row_stride": ((width * 3 + 3) // 4) * 4,
         }
         return IMAGE_INFO
-    except Exception as error:
-        print("Invalid BMP:", error)
+    except Exception:
         return None
     finally:
         try:
@@ -283,8 +274,7 @@ def load_image_width(path):
         info = load_bmp_info(path)
         if info is not None:
             return info["width"]
-    except Exception as error:
-        print("Invalid image:", error)
+    except Exception:
         return None
 
 
@@ -294,11 +284,8 @@ def refresh_image(banner_request, wlan=None):
     image_url = build_image_url(banner_request)
 
     if wlan is None or not wlan.isconnected():
-        wlan = connect_wifi()
-    if not wlan:
-        return False, None
+        wlan = connect(config.WIFI_SSID, config.WIFI_PASSWORD)
 
-    print("Downloading:", banner_request.get("text", ""))
     if not download_file(image_url, temp_image):
         safe_remove(temp_image)
         safe_remove(image)
@@ -371,8 +358,8 @@ def draw_bmp_frame(x):
                 red = row[base + 2]
                 graphics.set_pen(graphics.create_pen(red, green, blue))
                 graphics.pixel(screen_x + column, y)
-    except Exception as error:
-        print("BMP draw failed:", error)
+    except Exception:
+        pass
     finally:
         try:
             source.close()
@@ -400,14 +387,6 @@ def mqtt_port():
         return int(config.MQTT_PORT)
     except Exception:
         return 1883
-
-
-def print_mqtt_settings():
-    print("MQTT host:", config.MQTT_HOST)
-    print("MQTT port:", mqtt_port())
-    print("MQTT topic:", config.MQTT_TOPIC)
-    print("MQTT username set:", bool(config.MQTT_USERNAME))
-    print("MQTT password set:", bool(config.MQTT_PASSWORD))
 
 
 def build_mqtt_client_id():
@@ -449,7 +428,6 @@ def normalize_banner_request(payload):
             try:
                 request[key] = int(request[key])
             except Exception:
-                print("Invalid banner field:", key)
                 return None
 
     for key in ("font", "color", "background", "format"):
@@ -476,7 +454,6 @@ def normalize_animation_action(payload):
         try:
             duration_ms = int(duration) * 1000
         except Exception:
-            print("Invalid animation duration")
             return None
 
     if duration_ms < 1000:
@@ -493,7 +470,6 @@ def decode_mqtt_payload(message):
     try:
         payload = message.decode("utf-8").strip()
     except Exception:
-        print("MQTT message decode failed")
         return None
 
     if not payload:
@@ -502,8 +478,7 @@ def decode_mqtt_payload(message):
     if payload.startswith("{"):
         try:
             parsed = json.loads(payload)
-        except Exception as error:
-            print("MQTT JSON parse failed, using plain text:", error)
+        except Exception:
             return {
                 "type": "text",
                 "request": build_banner_request(text=payload),
@@ -516,11 +491,9 @@ def decode_mqtt_payload(message):
             if animation_action is not None:
                 return animation_action
 
-            print("MQTT animation JSON invalid")
             return None
 
         if payload_type != "text":
-            print("Unknown MQTT message type:", payload_type)
             return None
 
         banner_request = normalize_banner_request(parsed)
@@ -531,7 +504,6 @@ def decode_mqtt_payload(message):
                 "request": banner_request,
             }
 
-        print("MQTT JSON invalid, using plain text")
         return {
             "type": "text",
             "request": build_banner_request(text=payload),
@@ -545,13 +517,6 @@ def decode_mqtt_payload(message):
 
 def enqueue_action(action):
     ACTION_QUEUE.append(action)
-
-    if action.get("type") == "animation":
-        label = action.get("name", "")
-    else:
-        label = action.get("request", {}).get("text", "")
-
-    print("MQTT action:", action.get("type", ""), label, "(queue:", len(ACTION_QUEUE), ")")
 
 
 def dequeue_action():
@@ -571,14 +536,11 @@ def handle_mqtt_message(topic, message):
 
 def connect_mqtt(wlan=None):
     if wlan is None or not wlan.isconnected():
-        wlan = connect_wifi()
-    if not wlan:
-        return None, None
+        wlan = connect(config.WIFI_SSID, config.WIFI_PASSWORD)
 
     client = None
 
     try:
-        print_mqtt_settings()
         client = MQTTClient(
             client_id=to_bytes(build_mqtt_client_id()),
             server=config.MQTT_HOST,
@@ -588,14 +550,10 @@ def connect_mqtt(wlan=None):
             keepalive=60,
         )
         client.set_callback(handle_mqtt_message)
-        print("MQTT connecting...")
         client.connect()
-        print("MQTT subscribing:", config.MQTT_TOPIC)
         client.subscribe(to_bytes(config.MQTT_TOPIC))
-        print("MQTT connected:", config.MQTT_TOPIC)
         return client, wlan
-    except Exception as error:
-        print("MQTT connection failed:", error)
+    except Exception:
         if client is not None:
             try:
                 client.disconnect()
@@ -633,7 +591,6 @@ def poll_mqtt(client):
     except OSError as error:
         if mqtt_would_block(error):
             return client
-        print("MQTT disconnected:", error)
         disconnect_mqtt(client)
         return None
 
@@ -645,12 +602,7 @@ def ping_mqtt(client):
     try:
         client.ping()
         return client
-    except Exception as error:
-        print("MQTT ping failed:", error)
-        disconnect_mqtt(client)
-        return None
-    except Exception as error:
-        print("MQTT disconnected:", error)
+    except Exception:
         disconnect_mqtt(client)
         return None
 
@@ -730,7 +682,6 @@ def play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, ne
     collect_garbage()
     started_at = time.ticks_ms()
     worms = matrix_animation.create_worms(CosmicUnicorn.WIDTH, CosmicUnicorn.HEIGHT)
-    print("Animation:", "matrix")
 
     while time.ticks_diff(time.ticks_ms(), started_at) < duration_ms:
         frame_started_at = time.ticks_ms()
@@ -748,7 +699,6 @@ def play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, ne
             time.sleep_ms(remaining)
 
     collect_garbage()
-    print("Animation done:", "matrix")
     return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
 
@@ -757,7 +707,6 @@ def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt
     started_at = time.ticks_ms()
     loops = 0
 
-    print("Animation:", animation_path)
 
     while True:
         source = None
@@ -798,8 +747,7 @@ def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt
 
                 if frame_index % 20 == 0:
                     collect_garbage()
-        except Exception as error:
-            print("Animation failed:", error)
+        except Exception:
             break
         finally:
             try:
@@ -813,7 +761,6 @@ def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt
         if time.ticks_diff(time.ticks_ms(), started_at) >= duration_ms:
             break
 
-    print("Animation done:", animation_path, "loops:", loops)
     return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
 
@@ -824,7 +771,6 @@ def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mq
     if name is None:
         animation = choose_random_animation()
         if animation is None:
-            print("No animations available")
             return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
         animation_type, animation_value = animation
@@ -839,7 +785,6 @@ def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mq
 
     animation_path = find_gif_animation(name)
     if animation_path is None:
-        print("Animation not found:", name)
         return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
     return play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
@@ -851,7 +796,6 @@ def apply_banner_request(banner_request, image_width, wlan):
     if refreshed:
         new_width = load_image()
         if new_width is not None:
-            print("Image updated")
             return banner_request, new_width, CosmicUnicorn.WIDTH, wlan
 
     return banner_request, None, CosmicUnicorn.WIDTH, wlan
@@ -867,11 +811,7 @@ def animation_finished(image_width, x):
 def run():
     initialize_display()
 
-    wlan = connect_wifi()
-    if wlan:
-        print("WiFi connected")
-    else:
-        print("WiFi not connected")
+    wlan = connect(config.WIFI_SSID, config.WIFI_PASSWORD)
 
     image_width = None
     mqtt_client = None

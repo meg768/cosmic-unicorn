@@ -75,8 +75,8 @@ def convert_gif(input_path, output_path):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: gif_to_cuf.py input.gif output.cuf")
-        print("   or: gif_to_cuf.py input-gif-dir output-cuf-dir")
+        print("Usage: convert.py input.gif output.cuf")
+        print("   or: convert.py input-gif-dir output-cuf-dir")
         return 2
 
     input_path = Path(sys.argv[1])

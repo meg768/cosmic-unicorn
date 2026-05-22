@@ -1,7 +1,7 @@
 import os
 
 
-ANIMATION_DIR = "cufs"
+ANIMATION_DIR = "animations/gif/cufs"
 
 
 def join_path(directory, filename):

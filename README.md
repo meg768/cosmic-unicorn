@@ -1,12 +1,13 @@
 # cosmic-unicorn
 
-A MicroPython project for a Pimoroni Cosmic Unicorn with Pico W.
+A MicroPython project for a Pimoroni Cosmic Unicorn with Pico W or Pico 2 W.
 
 This version uses:
 
 - Wi-Fi for networking
-- MQTT for incoming messages
-- [banner.egelberg.se](http://banner.egelberg.se) to render text as BMP
+- NTP for clock sync
+- MQTT for incoming text and animation messages
+- [banner.egelberg.se](http://banner.egelberg.se) to render text as 24-bit BMP
 - a local queue on the Pico so multiple messages are shown in order
 
 ## Idea
@@ -16,59 +17,58 @@ The Cosmic Unicorn does not generate text graphics on its own.
 Instead, it works like this:
 
 1. The Pico connects to Wi-Fi
-2. The Pico connects to MQTT
-3. A message arrives on the `cosmic-unicorn` topic
-4. The Pico builds a URL to `banner.egelberg.se`
-5. `banner` returns a 24-bit BMP
-6. The Pico downloads the BMP and scrolls it across the display
-7. The next MQTT message waits in queue until the current banner is finished
+2. The Pico syncs its clock with NTP
+3. The Pico connects to MQTT
+4. A message arrives on the configured MQTT topic
+5. Text messages are rendered by `banner.egelberg.se` as 24-bit BMP
+6. Animation messages play either Matrix rain or a converted CUF animation
+7. The next MQTT message waits in queue until the current banner or animation is finished
 
-This lets typography, emojis, colors, and layout be handled server-side, while the Pico only needs to display the image.
+This lets typography, emojis, colors, and layout be handled server-side, while the Pico only needs to display images and animations.
 
-## Files
+## Project Layout
 
-The main files used in this project are:
+The repository is split into Pico files and computer-side helper files.
 
-- [main.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/main.py)
-- [wifi.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/wifi.py)
-- [config.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/config.example.py)
-- [`umqtt/`](/Users/magnus/Documents/GitHub/cosmic-unicorn/umqtt)
+Files under [pico/](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico) are the files that belong on the Pico:
 
-On the Pico itself you should have:
+- [pico/main.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/main.py)
+- [pico/config.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/config.example.py)
+- [pico/wifi/](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/wifi)
+- [pico/clock/](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/clock)
+- [pico/umqtt/](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/umqtt)
+- [pico/animations/](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/animations)
+
+Computer-side files:
+
+- [gifs/](/Users/magnus/Documents/GitHub/cosmic-unicorn/gifs) contains source GIF animations
+- [tools/convert.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/tools/convert.py) converts GIF files to CUF files
+- [casing/](/Users/magnus/Documents/GitHub/cosmic-unicorn/casing) contains casing and cutout files
+
+On the Pico itself, upload the contents of `pico/` to the device root. The Pico root should then contain:
 
 - `main.py`
-- `wifi.py`
 - `config.py`
-- `umqtt/simple.py`
-- `umqtt/__init__.py`
-- `cufs/*.cuf` for MQTT-triggered animations, optional
-- `animations/gif.py` for converted GIF/CUF animations, optional
-- `animations/matrix.py` for the generated Matrix animation, optional
+- `wifi/`
+- `clock/`
+- `umqtt/`
+- `animations/`
 
 `display.bmp` is created and updated on the Pico at runtime and does not need to exist in the repository beforehand.
 
 ## Configuration
 
-### `config.py`
+Create a local `pico/config.py` based on [pico/config.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/pico/config.example.py).
 
-Create a local `config.py` based on [config.example.py](/Users/magnus/Documents/GitHub/cosmic-unicorn/config.example.py).
-
-`config.py` is ignored in [`.gitignore`](/Users/magnus/Documents/GitHub/cosmic-unicorn/.gitignore) and should not be committed.
+`pico/config.py` contains local Wi-Fi and MQTT settings and should not be committed.
 
 Example:
 
 ```python
 WIFI_SSID = "your-wifi-name"
 WIFI_PASSWORD = "your-wifi-password"
-COSMIC_UNICORN_MODEL = "Pico W"
-MQTT_HOST = "server.example.com"
-MQTT_PORT = 1883
-MQTT_TOPIC = "cosmic-unicorn"
-MQTT_USERNAME = "your-mqtt-username"
-MQTT_PASSWORD = "your-mqtt-password"
 
-MQTT_RECONNECT_MS = 5000
-MQTT_PING_MS = 25000
+COSMIC_UNICORN_MODEL = "Pico W"
 
 BANNER_TEXT = "👍"
 BANNER_BASE_URL = "http://banner.egelberg.se/"
@@ -81,9 +81,16 @@ BANNER_BACKGROUND = "black"
 BANNER_PADDING = None
 BANNER_GAP = None
 BANNER_FORMAT = "bmp"
-```
 
-These values are used to build the `banner` URL.
+MQTT_HOST = "server.example.com"
+MQTT_PORT = 1883
+MQTT_TOPIC = "cosmic-unicorn"
+MQTT_USERNAME = "your-mqtt-username"
+MQTT_PASSWORD = "your-mqtt-password"
+
+MQTT_RECONNECT_MS = 5000
+MQTT_PING_MS = 25000
+```
 
 `COSMIC_UNICORN_MODEL` controls the scroll delay:
 
@@ -140,7 +147,7 @@ Supported text fields:
 - `gap`
 - `format`
 
-Animation example:
+Animation examples:
 
 ```json
 {
@@ -161,7 +168,7 @@ Animation example:
 Supported animation fields:
 
 - `type`: use `"animation"`
-- `name`: optional; either `"matrix"` or the name of a `.cuf` file in `cufs/` without the `.cuf` extension
+- `name`: optional; either `"matrix"` or the name of a `.cuf` file in `pico/animations/gif/cufs/` without the `.cuf` extension
 - `duration`: duration in seconds, default `60`
 
 If `name` is omitted, a random available animation is chosen:
@@ -245,8 +252,8 @@ Incoming MQTT messages are placed in an internal queue.
 
 This means that if Homey sends multiple messages in quick succession:
 
-- the current banner is not interrupted
-- the next banner waits its turn
+- the current banner or animation is not interrupted
+- the next message waits its turn
 - messages are shown in order
 
 This is important for Homey flows where several RSS or status messages may arrive almost at the same time.
@@ -259,18 +266,20 @@ The animation behavior is:
 
 - the display stays black when the MQTT queue is empty
 - animation messages are queued in the same queue as text messages
-- `matrix` plays the generated Matrix animation from `animations/matrix.py`
-- other names play converted GIF/CUF animations from `cufs/`
+- `matrix` plays the generated Matrix animation from `pico/animations/matrix/`
+- other names play converted GIF/CUF animations from `pico/animations/gif/cufs/`
 - CUF animations repeat until the requested duration has passed
 - the current animation loop is always allowed to finish
 - MQTT is still polled while animations play
 - queued text messages wait until the current animation window is done
 
-GIF files in `gifs/` can be converted to compressed CUF files with:
+Source GIF files live in [gifs/](/Users/magnus/Documents/GitHub/cosmic-unicorn/gifs). Convert them to compressed CUF files with:
 
 ```bash
-python3 tools/gif_to_cuf.py gifs cufs
+python3 tools/convert.py gifs pico/animations/gif/cufs
 ```
+
+The generated `.cuf` files should be uploaded with the rest of `pico/`.
 
 ## Banner Service
 
@@ -278,7 +287,7 @@ The Pico always fetches plain `http://` images from:
 
 - [banner.egelberg.se](http://banner.egelberg.se)
 
-`main.py` builds URLs roughly like this:
+`pico/main.py` builds URLs roughly like this:
 
 ```text
 http://banner.egelberg.se/?text=Hello&height=32&font=impact&color=gold&format=bmp
@@ -288,20 +297,20 @@ This means all text layout happens outside the Pico.
 
 ## Startup Behavior
 
-If MQTT is configured, the display starts up and waits for incoming messages.
+At startup, the Pico connects to Wi-Fi, syncs time with NTP, connects to MQTT, and waits for incoming messages.
 
 This means:
 
 - no default banner is downloaded from the network at boot
 - the screen may remain empty until the first MQTT message arrives
 
-If you want different boot behavior, that needs to be added in `main.py`.
+If you want different boot behavior, that needs to be added in `pico/main.py`.
 
 ## Limitations
 
 - The Pico only supports `http://` in this code, not `https://`
-- if `banner` returns an invalid or too-large PNG, nothing new will be shown
-- some very long texts may become too large for the Pico's PNG handling
+- if `banner` returns an invalid or too-large BMP, nothing new will be shown
+- very long texts can still become too large for Pico memory
 - retained MQTT messages are not a great fit here; normal non-retained messages work best
 
 ## Thonny
@@ -309,23 +318,12 @@ If you want different boot behavior, that needs to be added in `main.py`.
 Typical Thonny workflow:
 
 1. Connect to the Pico
-2. Make sure these files exist on `Raspberry Pi Pico`:
-   `main.py`, `wifi.py`, `config.py`, `umqtt/`
-3. Run `main.py`
-4. Look in the `Shell` for:
+2. Upload the contents of `pico/` to the root of `Raspberry Pi Pico`
+3. Create or update `config.py` on the Pico
+4. Run `main.py`
+5. Send MQTT text or animation messages to the configured topic
 
-```text
-WiFi connected
-MQTT connected: cosmic-unicorn
-```
-
-When messages arrive, you should see something like:
-
-```text
-MQTT message: Hello world (queue: 1)
-Downloading: Hello world
-Image updated
-```
+The runtime is mostly quiet. Wi-Fi/NTP prints one connection time line; normal MQTT messages and image updates do not print status lines.
 
 ## Homey
 
@@ -334,7 +332,7 @@ This project works well with Homey flows.
 Typical setup:
 
 1. Homey triggers on RSS, weather, or another event
-2. Homey sends text or JSON to the MQTT topic `cosmic-unicorn`
+2. Homey sends text or JSON to the configured MQTT topic
 3. The Cosmic Unicorn shows the messages in order
 
 This is especially useful for:
@@ -351,9 +349,10 @@ This project is intentionally simple on the Pico side:
 
 - networking
 - MQTT
-- PNG download
+- BMP download
 - scrolling
+- small animation playback
 
-All polished presentation lives in `banner`.
+All polished text presentation lives in `banner`.
 
 That keeps the Pico small, robust, and easy to use as a dedicated information display.
