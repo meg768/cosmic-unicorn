@@ -1,5 +1,4 @@
 import os
-import random
 import socket
 import time
 import machine
@@ -108,6 +107,15 @@ def build_image_url(banner_request):
     add_query_param(query_parts, "format", banner_request.get("format"))
 
     return "{}?{}".format(config.BANNER_BASE_URL, "&".join(query_parts))
+
+
+def build_animation_url(name=None):
+    query_parts = []
+
+    add_query_param(query_parts, "name", name)
+    add_query_param(query_parts, "format", "cuf")
+
+    return "{}/animation?{}".format(config.BANNER_BASE_URL.rstrip("/"), "&".join(query_parts))
 
 
 def parse_url(url):
@@ -647,51 +655,11 @@ def collect_garbage():
     gc.collect()
 
 
-def animation_basename(path):
-    name = path
-    slash_index = name.rfind("/")
-    if slash_index != -1:
-        name = name[slash_index + 1:]
-
-    dot_index = name.rfind(".")
-    if dot_index != -1:
-        name = name[:dot_index]
-
-    return name
-
-
-def find_gif_animation(name):
-    requested = str(name).strip().lower()
-    for path in gif_animation.list_animations():
-        if animation_basename(path).lower() == requested:
-            return path
-
-    return None
-
-
-def list_available_animations():
-    animations = []
-
-    animations.append(("matrix", "matrix"))
-
-    for path in gif_animation.list_animations():
-        animations.append(("gif", path))
-
-    animations.sort()
-    return animations
-
-
-def choose_random_animation():
-    animations = list_available_animations()
-    if not animations:
-        return None
-
-    return animations[random.randint(0, len(animations) - 1)]
-
-
 def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
     name = action.get("name")
     duration_ms = action.get("duration_ms", 60000)
+    animation_path = "animation.cuf"
+    temp_animation_path = "animation.new.cuf"
 
     def tick():
         nonlocal mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
@@ -702,18 +670,27 @@ def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mq
             next_mqtt_ping_at,
         )
 
-    if name is None:
-        animation = choose_random_animation()
-        if animation is None:
-            return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+    if name is not None:
+        name = str(name).strip()
 
-        animation_type, animation_value = animation
-        if animation_type == "matrix":
-            matrix_animation.play(graphics, cosmic, BLACK, duration_ms, tick, collect_garbage)
-            return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+    if name is not None and name.lower() == "matrix":
+        matrix_animation.play(graphics, cosmic, BLACK, duration_ms, tick, collect_garbage)
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+    collect_garbage()
+    safe_remove(temp_animation_path)
+    safe_remove(animation_path)
+
+    if not download_file(build_animation_url(name), temp_animation_path):
+        safe_remove(temp_animation_path)
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+
+    try:
+        os.rename(temp_animation_path, animation_path)
+        collect_garbage()
 
         gif_animation.play(
-            animation_value,
+            animation_path,
             graphics,
             cosmic,
             BLACK,
@@ -723,28 +700,11 @@ def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mq
             tick,
             collect_garbage,
         )
-        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
+    finally:
+        safe_remove(temp_animation_path)
+        safe_remove(animation_path)
+        collect_garbage()
 
-    name = str(name).strip()
-    if name.lower() == "matrix":
-        matrix_animation.play(graphics, cosmic, BLACK, duration_ms, tick, collect_garbage)
-        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
-    animation_path = find_gif_animation(name)
-    if animation_path is None:
-        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
-    gif_animation.play(
-        animation_path,
-        graphics,
-        cosmic,
-        BLACK,
-        duration_ms,
-        CosmicUnicorn.WIDTH,
-        CosmicUnicorn.HEIGHT,
-        tick,
-        collect_garbage,
-    )
     return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
 

@@ -8,7 +8,7 @@ COSMIC_UNICORN_MODEL = "Pico W"
 
 # Default banner request. MQTT text messages can override these fields.
 BANNER_TEXT = "👍"
-BANNER_BASE_URL = "http://banner.egelberg.se/"
+BANNER_BASE_URL = "http://cosmic-unicorn.egelberg.se/"
 BANNER_HEIGHT = 32
 BANNER_FONT = ""
 BANNER_SIZE = None

@@ -1,29 +1,4 @@
-import os
 import time
-
-
-ANIMATION_DIR = "animations/gif/cufs"
-
-
-def join_path(directory, filename):
-    if directory.endswith("/"):
-        return directory + filename
-    return directory + "/" + filename
-
-
-def list_animations(animation_dir=ANIMATION_DIR):
-    try:
-        filenames = os.listdir(animation_dir)
-    except OSError:
-        return []
-
-    animations = []
-    for filename in filenames:
-        if filename.lower().endswith(".cuf"):
-            animations.append(join_path(animation_dir, filename))
-
-    animations.sort()
-    return animations
 
 
 def read_u16(data, offset):

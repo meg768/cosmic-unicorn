@@ -6,7 +6,6 @@ PICO_DIR="$ROOT_DIR/pico"
 CONNECT="auto"
 DRY_RUN=0
 INCLUDE_CONFIG=1
-INCLUDE_CUFS=1
 SOFT_RESET=0
 SHOW_TREE=0
 
@@ -20,7 +19,6 @@ Options:
   --connect NAME   mpremote connection name or serial port. Default: auto
   --dry-run        Show what would be uploaded, but do not upload
   --no-config      Do not upload pico/config.py
-  --no-cufs        Do not upload converted CUF animation files
   --reset          Soft reset the Pico after upload
   --tree           Show the Pico filesystem tree after upload
   -h, --help       Show this help
@@ -29,7 +27,6 @@ Examples:
   tools/sync-pico.sh
   tools/sync-pico.sh --dry-run
   tools/sync-pico.sh --connect /dev/cu.usbmodem1101 --reset
-  tools/sync-pico.sh --no-cufs
 EOF
 }
 
@@ -45,10 +42,6 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-config)
       INCLUDE_CONFIG=0
-      shift
-      ;;
-    --no-cufs)
-      INCLUDE_CUFS=0
       shift
       ;;
     --reset)
@@ -94,14 +87,12 @@ RSYNC_EXCLUDES=(
   "--exclude=.micropico"
   "--exclude=.vscode/"
   "--exclude=config.example.py"
+  "--exclude=animations/gif/cufs/"
+  "--exclude=*.cuf"
 )
 
 if [ "$INCLUDE_CONFIG" -eq 0 ]; then
   RSYNC_EXCLUDES+=("--exclude=config.py")
-fi
-
-if [ "$INCLUDE_CUFS" -eq 0 ]; then
-  RSYNC_EXCLUDES+=("--exclude=animations/gif/cufs/")
 fi
 
 rsync -a "${RSYNC_EXCLUDES[@]}" "$PICO_DIR/" "$STAGING_DIR/pico/"
@@ -118,6 +109,12 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run only. Nothing uploaded."
   exit 0
 fi
+
+echo
+echo "Removing old CUF animation files from device, if present ..."
+python3 -m mpremote connect "$CONNECT" fs rm -r :animations/gif/cufs >/dev/null 2>&1 || true
+python3 -m mpremote connect "$CONNECT" fs rm :animation.cuf >/dev/null 2>&1 || true
+python3 -m mpremote connect "$CONNECT" fs rm :animation.new.cuf >/dev/null 2>&1 || true
 
 echo
 echo "Uploading pico/ to device root using mpremote connect $CONNECT ..."
