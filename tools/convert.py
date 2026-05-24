@@ -74,16 +74,28 @@ def convert_gif(input_path, output_path):
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: convert.py input.gif output.cuf")
+    clean_output = False
+
+    if len(sys.argv) == 1:
+        input_path = Path("gifs")
+        output_path = Path("cufs")
+        clean_output = True
+    elif len(sys.argv) == 3:
+        input_path = Path(sys.argv[1])
+        output_path = Path(sys.argv[2])
+    else:
+        print("Usage: convert.py")
+        print("   or: convert.py input.gif output.cuf")
         print("   or: convert.py input-gif-dir output-cuf-dir")
         return 2
 
-    input_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[2])
-
     if input_path.is_dir():
         output_path.mkdir(parents=True, exist_ok=True)
+
+        if clean_output:
+            for cuf_path in output_path.glob("*.cuf"):
+                cuf_path.unlink()
+
         gif_paths = sorted(input_path.glob("*.gif"))
         if not gif_paths:
             print("No GIF files found in {}".format(input_path))

@@ -276,10 +276,15 @@ The animation behavior is:
 Source GIF files live in [gifs/](/Users/magnus/Documents/GitHub/cosmic-unicorn/gifs). Convert them to compressed CUF files with:
 
 ```bash
-python3 tools/convert.py gifs pico/animations/gif/cufs
+python3 tools/convert.py
 ```
 
-The generated `.cuf` files should be uploaded with the rest of `pico/`.
+This converts all `gifs/*.gif` files into `cufs/*.cuf`.
+
+Useful 32 x 32 GIF collections:
+
+- [LED Pixel Art Collection](https://ledpixelart.com/art/)
+- [SmartMatrix 32x32 GIF Collection](https://community.pixelmatix.com/t/collection-of-32x32-gifs/51)
 
 ## Banner Service
 
@@ -324,6 +329,25 @@ Typical Thonny workflow:
 5. Send MQTT text or animation messages to the configured topic
 
 The runtime is mostly quiet. Wi-Fi/NTP prints one connection time line; normal MQTT messages and image updates do not print status lines.
+
+## Sync
+
+The easiest way to upload the Pico files is with `mpremote`:
+
+```bash
+tools/sync-pico.sh
+```
+
+Useful variants:
+
+```bash
+tools/sync-pico.sh --dry-run
+tools/sync-pico.sh --reset
+tools/sync-pico.sh --no-cufs
+tools/sync-pico.sh --connect /dev/cu.usbmodem1101
+```
+
+The script uploads the contents of `pico/` to the device root. It skips local editor files and `.DS_Store` files. `pico/config.py` is uploaded if it exists.
 
 ## Homey
 

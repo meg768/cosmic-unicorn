@@ -282,6 +282,7 @@ def refresh_image(banner_request, wlan=None):
     image = "display.bmp"
     temp_image = "display.new.bmp"
     image_url = build_image_url(banner_request)
+    collect_garbage()
 
     if wlan is None or not wlan.isconnected():
         wlan = connect(config.WIFI_SSID, config.WIFI_PASSWORD)
@@ -289,14 +290,20 @@ def refresh_image(banner_request, wlan=None):
     if not download_file(image_url, temp_image):
         safe_remove(temp_image)
         safe_remove(image)
+        collect_garbage()
         return False, wlan
+
+    collect_garbage()
 
     if load_image_width(temp_image) is None:
         safe_remove(temp_image)
         safe_remove(image)
+        collect_garbage()
         return False, wlan
 
-    return activate_download(), wlan
+    activated = activate_download()
+    collect_garbage()
+    return activated, wlan
 
 
 def load_image():
@@ -535,6 +542,8 @@ def handle_mqtt_message(topic, message):
 
 
 def connect_mqtt(wlan=None):
+    collect_garbage()
+
     if wlan is None or not wlan.isconnected():
         wlan = connect(config.WIFI_SSID, config.WIFI_PASSWORD)
 
@@ -552,6 +561,7 @@ def connect_mqtt(wlan=None):
         client.set_callback(handle_mqtt_message)
         client.connect()
         client.subscribe(to_bytes(config.MQTT_TOPIC))
+        collect_garbage()
         return client, wlan
     except Exception:
         if client is not None:
@@ -559,6 +569,7 @@ def connect_mqtt(wlan=None):
                 client.disconnect()
             except Exception:
                 pass
+        collect_garbage()
         return None, wlan
 
 
@@ -678,95 +689,18 @@ def choose_random_animation():
     return animations[random.randint(0, len(animations) - 1)]
 
 
-def play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
-    collect_garbage()
-    started_at = time.ticks_ms()
-    worms = matrix_animation.create_worms(CosmicUnicorn.WIDTH, CosmicUnicorn.HEIGHT)
+def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
+    name = action.get("name")
+    duration_ms = action.get("duration_ms", 60000)
 
-    while time.ticks_diff(time.ticks_ms(), started_at) < duration_ms:
-        frame_started_at = time.ticks_ms()
-        matrix_animation.render_frame(graphics, cosmic, BLACK, worms)
+    def tick():
+        nonlocal mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
         mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = maintain_mqtt(
             mqtt_client,
             wlan,
             next_mqtt_retry_at,
             next_mqtt_ping_at,
         )
-
-        elapsed = time.ticks_diff(time.ticks_ms(), frame_started_at)
-        remaining = matrix_animation.FRAME_DELAY_MS - elapsed
-        if remaining > 0:
-            time.sleep_ms(remaining)
-
-    collect_garbage()
-    return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
-
-def play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
-    collect_garbage()
-    started_at = time.ticks_ms()
-    loops = 0
-
-
-    while True:
-        source = None
-        try:
-            source = open(animation_path, "rb")
-            header = gif_animation.read_header(source, graphics)
-            width = header["width"]
-            height = header["height"]
-            frame_count = header["frame_count"]
-            delay_ms = header["delay_ms"]
-            palette = header["palette"]
-
-            for frame_index in range(frame_count):
-                frame_started_at = time.ticks_ms()
-                frame_data = gif_animation.read_frame(source)
-                gif_animation.render_frame(
-                    graphics,
-                    cosmic,
-                    BLACK,
-                    frame_data,
-                    width,
-                    height,
-                    palette,
-                    CosmicUnicorn.WIDTH,
-                    CosmicUnicorn.HEIGHT,
-                )
-                mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = maintain_mqtt(
-                    mqtt_client,
-                    wlan,
-                    next_mqtt_retry_at,
-                    next_mqtt_ping_at,
-                )
-
-                elapsed = time.ticks_diff(time.ticks_ms(), frame_started_at)
-                remaining = delay_ms - elapsed
-                if remaining > 0:
-                    time.sleep_ms(remaining)
-
-                if frame_index % 20 == 0:
-                    collect_garbage()
-        except Exception:
-            break
-        finally:
-            try:
-                source.close()
-            except Exception:
-                pass
-
-        loops += 1
-        collect_garbage()
-
-        if time.ticks_diff(time.ticks_ms(), started_at) >= duration_ms:
-            break
-
-    return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
-
-
-def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at):
-    name = action.get("name")
-    duration_ms = action.get("duration_ms", 60000)
 
     if name is None:
         animation = choose_random_animation()
@@ -775,29 +709,56 @@ def play_animation_action(action, mqtt_client, wlan, next_mqtt_retry_at, next_mq
 
         animation_type, animation_value = animation
         if animation_type == "matrix":
-            return play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
+            matrix_animation.play(graphics, cosmic, BLACK, duration_ms, tick, collect_garbage)
+            return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
-        return play_gif_animation(animation_value, duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
+        gif_animation.play(
+            animation_value,
+            graphics,
+            cosmic,
+            BLACK,
+            duration_ms,
+            CosmicUnicorn.WIDTH,
+            CosmicUnicorn.HEIGHT,
+            tick,
+            collect_garbage,
+        )
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
     name = str(name).strip()
     if name.lower() == "matrix":
-        return play_matrix_animation(duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
+        matrix_animation.play(graphics, cosmic, BLACK, duration_ms, tick, collect_garbage)
+        return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
     animation_path = find_gif_animation(name)
     if animation_path is None:
         return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
-    return play_gif_animation(animation_path, duration_ms, mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at)
+    gif_animation.play(
+        animation_path,
+        graphics,
+        cosmic,
+        BLACK,
+        duration_ms,
+        CosmicUnicorn.WIDTH,
+        CosmicUnicorn.HEIGHT,
+        tick,
+        collect_garbage,
+    )
+    return mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at
 
 
 def apply_banner_request(banner_request, image_width, wlan):
+    collect_garbage()
     refreshed, wlan = refresh_image(banner_request, wlan)
 
     if refreshed:
         new_width = load_image()
         if new_width is not None:
+            collect_garbage()
             return banner_request, new_width, CosmicUnicorn.WIDTH, wlan
 
+    collect_garbage()
     return banner_request, None, CosmicUnicorn.WIDTH, wlan
 
 
@@ -837,6 +798,7 @@ def run():
             next_action = None
 
         if next_action is not None:
+            collect_garbage()
             action_type = next_action.get("type")
             if action_type == "animation":
                 mqtt_client, wlan, next_mqtt_retry_at, next_mqtt_ping_at = play_animation_action(
@@ -848,12 +810,14 @@ def run():
                 )
                 image_width = None
                 x = CosmicUnicorn.WIDTH
+                collect_garbage()
             else:
                 current_request = next_action["request"]
                 current_request, image_width, x, wlan = apply_banner_request(current_request, image_width, wlan)
-        elif animation_finished(image_width, x):
+        elif image_width is not None and animation_finished(image_width, x):
             image_width = None
             x = CosmicUnicorn.WIDTH
+            collect_garbage()
 
         time.sleep(scroll_delay)
 

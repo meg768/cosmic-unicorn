@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:shaper="http://www.shapertools.com/namespaces/shaper" width="220mm" height="220mm" viewBox="0 0 220 220">
-  <title>Cutout layout with separate center tongue object</title>
-  <desc>Working/reference SVG with the 5 mm pocket, the 12 mm deep pocket shaped around the center tongue, and the center tongue as a separate closed object.</desc>
-  <polygon id="origin_anchor_top_left_board_corner" points="0,0 8,0 0,12" fill="#ff0000" stroke="none"/>
-  <path id="pocket_205x205_depth_5mm" shaper:cutDepth="5mm" d="M 10.5 7.5 H 209.5 A 3 3 0 0 1 212.5 10.5 V 209.5 A 3 3 0 0 1 209.5 212.5 H 10.5 A 3 3 0 0 1 7.5 209.5 V 10.5 A 3 3 0 0 1 10.5 7.5 Z" fill="none" stroke="#0066cc" stroke-width="0.25"/>
-  <path id="deep_clearance_205x142_depth_12mm_with_tongue_cutout" shaper:cutDepth="12mm" d="M 11.5 67.5 H 208.5 A 4 4 0 0 1 212.5 71.5 V 205.5 A 4 4 0 0 1 208.5 209.5 H 118 V 199.5 A 4 4 0 0 0 114 195.5 H 106 A 4 4 0 0 0 102 199.5 V 209.5 H 11.5 A 4 4 0 0 1 7.5 205.5 V 71.5 A 4 4 0 0 1 11.5 67.5 Z" fill="none" stroke="#003399" stroke-width="0.25"/>
-  <path id="bottom_center_tongue_reference" d="M 102 209.5 V 199.5 A 4 4 0 0 1 106 195.5 H 114 A 4 4 0 0 1 118 199.5 V 209.5 Z" fill="#00aa88" fill-opacity="0.45" stroke="#007766" stroke-width="0.25"/>
-</svg>

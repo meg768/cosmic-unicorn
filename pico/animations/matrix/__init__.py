@@ -105,6 +105,28 @@ def render_frame(graphics, cosmic, black, worms):
     cosmic.update(graphics)
 
 
+def play(graphics, cosmic, black, duration_ms, tick=None, collect_garbage=None):
+    started_at = time.ticks_ms()
+    worms = create_worms(WIDTH, HEIGHT)
+
+    while time.ticks_diff(time.ticks_ms(), started_at) < duration_ms:
+        frame_started_at = time.ticks_ms()
+        render_frame(graphics, cosmic, black, worms)
+
+        if tick:
+            tick()
+
+        elapsed = time.ticks_diff(time.ticks_ms(), frame_started_at)
+        remaining = FRAME_DELAY_MS - elapsed
+        if remaining > 0:
+            time.sleep_ms(remaining)
+
+    worms = None
+
+    if collect_garbage:
+        collect_garbage()
+
+
 def run():
     machine.freq(200000000)
     cosmic = CosmicUnicorn()

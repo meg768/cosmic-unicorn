@@ -1,4 +1,5 @@
 import os
+import time
 
 
 ANIMATION_DIR = "animations/gif/cufs"
@@ -107,3 +108,91 @@ def render_frame(graphics, cosmic, black, frame_data, width, height, palette, di
             pixel_index += 1
 
     cosmic.update(graphics)
+
+
+def animation_basename(path):
+    name = path
+    slash_index = name.rfind("/")
+    if slash_index != -1:
+        name = name[slash_index + 1:]
+
+    dot_index = name.rfind(".")
+    if dot_index != -1:
+        name = name[:dot_index]
+
+    return name
+
+
+def play(
+    animation_path,
+    graphics,
+    cosmic,
+    black,
+    duration_ms,
+    display_width,
+    display_height,
+    tick=None,
+    collect_garbage=None,
+):
+    animation_name = animation_basename(animation_path)
+    started_at = time.ticks_ms()
+    loops = 0
+
+    while True:
+        source = None
+        header = None
+        palette = None
+        frame_data = None
+
+        try:
+            source = open(animation_path, "rb")
+            header = read_header(source, graphics)
+            width = header["width"]
+            height = header["height"]
+            frame_count = header["frame_count"]
+            delay_ms = header["delay_ms"]
+            palette = header["palette"]
+
+            for frame_index in range(frame_count):
+                frame_started_at = time.ticks_ms()
+                frame_data = read_frame(source)
+                render_frame(
+                    graphics,
+                    cosmic,
+                    black,
+                    frame_data,
+                    width,
+                    height,
+                    palette,
+                    display_width,
+                    display_height,
+                )
+
+                if tick:
+                    tick()
+
+                elapsed = time.ticks_diff(time.ticks_ms(), frame_started_at)
+                remaining = delay_ms - elapsed
+                if remaining > 0:
+                    time.sleep_ms(remaining)
+
+        except Exception:
+            break
+        finally:
+            try:
+                source.close()
+            except Exception:
+                pass
+
+            source = None
+            header = None
+            palette = None
+            frame_data = None
+
+        loops += 1
+
+        if collect_garbage:
+            collect_garbage()
+
+        if time.ticks_diff(time.ticks_ms(), started_at) >= duration_ms:
+            break
