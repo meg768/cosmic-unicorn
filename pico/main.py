@@ -106,7 +106,7 @@ def build_image_url(banner_request):
     add_query_param(query_parts, "gap", banner_request.get("gap"))
     add_query_param(query_parts, "format", banner_request.get("format"))
 
-    return "{}?{}".format(config.BANNER_BASE_URL, "&".join(query_parts))
+    return "{}/text?{}".format(config.BANNER_BASE_URL.rstrip("/"), "&".join(query_parts))
 
 
 def build_animation_url(name=None):

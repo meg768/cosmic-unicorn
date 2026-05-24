@@ -297,7 +297,7 @@ The Pico always fetches plain `http://` images from:
 `pico/main.py` builds URLs roughly like this:
 
 ```text
-http://cosmic-unicorn.egelberg.se/?text=Hello&height=32&font=impact&color=gold&format=bmp
+http://cosmic-unicorn.egelberg.se/text?text=Hello&height=32&font=impact&color=gold&format=bmp
 ```
 
 This means all text layout happens outside the Pico.
