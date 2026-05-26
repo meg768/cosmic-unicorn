@@ -8,10 +8,31 @@ from picographics import PicoGraphics, DISPLAY_COSMIC_UNICORN as DISPLAY
 
 
 BRIGHTNESS = 1
+FADE_MS = 500
 FRAME_DELAY_MS = 0
 
 WIDTH = CosmicUnicorn.WIDTH
 HEIGHT = CosmicUnicorn.HEIGHT
+
+
+def animation_brightness(started_at, duration_ms):
+    elapsed_ms = time.ticks_diff(time.ticks_ms(), started_at)
+    remaining_ms = duration_ms - elapsed_ms
+    brightness = BRIGHTNESS
+
+    if elapsed_ms < FADE_MS:
+        brightness = elapsed_ms / FADE_MS
+
+    if remaining_ms < FADE_MS:
+        fade_out_brightness = remaining_ms / FADE_MS
+        if fade_out_brightness < brightness:
+            brightness = fade_out_brightness
+
+    if brightness < 0:
+        return 0
+    if brightness > BRIGHTNESS:
+        return BRIGHTNESS
+    return brightness
 
 
 def hsl_to_rgb(hue, saturation, luminance):
@@ -111,6 +132,7 @@ def play(graphics, cosmic, black, duration_ms, tick=None, collect_garbage=None):
 
     while time.ticks_diff(time.ticks_ms(), started_at) < duration_ms:
         frame_started_at = time.ticks_ms()
+        cosmic.set_brightness(animation_brightness(started_at, duration_ms))
         render_frame(graphics, cosmic, black, worms)
 
         if tick:
@@ -122,6 +144,7 @@ def play(graphics, cosmic, black, duration_ms, tick=None, collect_garbage=None):
             time.sleep_ms(remaining)
 
     worms = None
+    cosmic.set_brightness(BRIGHTNESS)
 
     if collect_garbage:
         collect_garbage()

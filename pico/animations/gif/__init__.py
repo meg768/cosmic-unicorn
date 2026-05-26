@@ -1,6 +1,30 @@
 import time
 
 
+FADE_MS = 500
+FULL_BRIGHTNESS = 1
+
+
+def animation_brightness(started_at, duration_ms):
+    elapsed_ms = time.ticks_diff(time.ticks_ms(), started_at)
+    remaining_ms = duration_ms - elapsed_ms
+    brightness = FULL_BRIGHTNESS
+
+    if elapsed_ms < FADE_MS:
+        brightness = elapsed_ms / FADE_MS
+
+    if remaining_ms < FADE_MS:
+        fade_out_brightness = remaining_ms / FADE_MS
+        if fade_out_brightness < brightness:
+            brightness = fade_out_brightness
+
+    if brightness < 0:
+        return 0
+    if brightness > FULL_BRIGHTNESS:
+        return FULL_BRIGHTNESS
+    return brightness
+
+
 def read_u16(data, offset):
     return data[offset] | (data[offset + 1] << 8)
 
@@ -131,6 +155,7 @@ def play(
             for frame_index in range(frame_count):
                 frame_started_at = time.ticks_ms()
                 frame_data = read_frame(source)
+                cosmic.set_brightness(animation_brightness(started_at, duration_ms))
                 render_frame(
                     graphics,
                     cosmic,
@@ -171,3 +196,5 @@ def play(
 
         if time.ticks_diff(time.ticks_ms(), started_at) >= duration_ms:
             break
+
+    cosmic.set_brightness(FULL_BRIGHTNESS)
